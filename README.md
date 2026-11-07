@@ -42,7 +42,7 @@
 ## ฟีเจอร์
 
 - **พูดต่อเนื่องไม่ต้องกดทุกประโยค** — ระบบ VAD (Voice Activity Detection) ตัดจังหวะเมื่อคุณหยุดพูด แล้วถอดเสียงทันที
-- **ไทย + อังกฤษ อัตโนมัติ** — Whisper ตรวจจภาษาจากเสียงจริง รองรับประโยคที่พูดปนกัน
+- **ไทย + อังกฤษ อัตโนมัติ** — Whisper ตรวจภาษาจากเสียงจริง รองรับประโยคที่พูดปนกัน
 - **พิมพ์แบบ Unicode ไม่แย่ง clipboard** — ใช้ `SendInput` ส่งตัวอักษรโดยตรง ภาษาไทยจึงไม่เพี้ยนและ clipboard เดิมยังอยู่
 - **ทำงานในเครื่อง 100%** — หลังดาวน์โหลดโมเดลครั้งแรกแล้ว ใช้งานออฟไลน์ได้ ไม่มีการส่งเสียงออกอินเทอร์เน็ต
 - **โหมดไอคอนลอย always-on-top** — วงกลมเล็ก ๆ ลากย้ายได้ คลิกเดียวเริ่ม/หยุด คลิกขวาเปลี่ยนโหมด
@@ -224,7 +224,8 @@ realtime-voice-typing/
 │  ├─ voice_icon_listening.png  # 256px source art (listening / green)
 │  ├─ VoiceTyping.ico           # multi-size app icon
 │  ├─ banner.png                # README hero image
-│  └─ preview.png               # README state preview
+│  ├─ preview.png               # README state preview
+│  └─ custom/                   # reserved for user-supplied icons
 ├─ src/realtime_voice_typing/
 │  ├─ app.py                    # capture → VAD → transcribe → insert loop
 │  ├─ audio.py                  # sounddevice input stream
@@ -235,8 +236,7 @@ realtime-voice-typing/
 │  ├─ vad.py                    # energy-based utterance segmentation
 │  └─ windows_target.py         # foreground-window tracking
 ├─ tests/                       # unit tests (pytest)
-├─ models/                      # local converted models (git-ignored)
-└─ assets/custom/              # reserved for user-supplied icons
+└─ models/                      # local converted models (git-ignored)
 ```
 
 ## ปรับแต่ง
