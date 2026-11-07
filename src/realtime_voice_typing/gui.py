@@ -10,6 +10,7 @@ from ctypes import wintypes
 import os
 from pathlib import Path
 import subprocess
+import threading
 import tkinter as tk
 from tkinter import ttk
 
@@ -298,7 +299,15 @@ class RealtimeVoiceGui:
         self._icon_active_state = None
         self._icon_pos = None
         self._spec_win = None
-        self._machine_profile = _detect_machine_profile()
+        self._spec_check_button = None
+        # Hardware probing is intentionally on-demand. Importing ctranslate2 and
+        # initialising CUDA can take ~8 seconds on the first call, which used to
+        # delay every app launch. The user triggers it with a button instead.
+        self._machine_profile = None
+        self._machine_check_running = False
+        self._machine_summary_var = tk.StringVar(
+            value="เครื่องที่ตรวจพบ: ยังไม่ได้ตรวจสอบ — กดปุ่ม “ตรวจสเปคเครื่อง”"
+        )
 
         self.status_var = tk.StringVar(value="Ready")
         self._model_map = {label: value for label, value in MODEL_CHOICES}
@@ -388,6 +397,11 @@ class RealtimeVoiceGui:
             state="readonly",
         ).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(6, 0))
         settings.columnconfigure(1, weight=1)
+
+        self.check_button = ttk.Button(
+            settings, text="ตรวจสเปคเครื่อง", command=self._start_machine_check
+        )
+        self.check_button.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         ttk.Label(frame, text="Transcript").pack(anchor="w")
         self.transcript = tk.Text(frame, height=10, wrap="word", state="disabled")
@@ -558,11 +572,98 @@ class RealtimeVoiceGui:
             self._update_model_hint()
 
     def _update_model_hint(self):
+        if self._machine_check_running:
+            self.model_hint_var.set(
+                "กำลังตรวจสอบสเปคเครื่อง... (ครั้งแรกอาจใช้เวลาราว 10 วินาที)"
+            )
+            if hasattr(self, "model_hint_label"):
+                self.model_hint_label.configure(fg="#555555")
+            return
+
         model_value = self._model_map.get(self.model_var.get(), "turbo")
-        text, color = evaluate_model_fit(model_value, self._machine_profile)
+        spec = get_model_spec(model_value)
+
+        if self._machine_profile is None:
+            if spec is None:
+                text, color = "ไม่พบข้อมูลสเปคของโมเดลนี้", "#555555"
+            else:
+                text = (
+                    f"ใช้ทรัพยากร: VRAM {spec.vram_gb} (GPU) / RAM {spec.ram_gb} (CPU) | "
+                    f"แนะนำ: {spec.recommended_spec}\n"
+                    "กดปุ่ม “ตรวจสเปคเครื่อง” เพื่อเช็กว่าเครื่องนี้พร้อมแค่ไหน"
+                )
+                color = "#555555"
+        else:
+            text, color = evaluate_model_fit(model_value, self._machine_profile)
+
         self.model_hint_var.set(text)
         if hasattr(self, "model_hint_label"):
             self.model_hint_label.configure(fg=color)
+
+    # -- on-demand hardware check -------------------------------------------
+
+    def _machine_summary_text(self) -> str:
+        mp = self._machine_profile
+        if not mp:
+            return "เครื่องที่ตรวจพบ: ยังไม่ได้ตรวจสอบ — กดปุ่ม “ตรวจสเปคเครื่อง”"
+        hw_parts = [f"CPU {mp.get('cpu_cores', '?')} threads"]
+        if mp.get("ram_gb"):
+            hw_parts.append(f"RAM {mp['ram_gb']} GB")
+        if mp.get("cuda_ready"):
+            gpu = mp.get("gpu_name") or "NVIDIA GPU"
+            vram = f" ({mp['vram_gb']} GB)" if mp.get("vram_gb") else ""
+            hw_parts.append(f"GPU: {gpu}{vram} [CUDA พร้อม]")
+        else:
+            hw_parts.append("GPU: ไม่พบ CUDA (ทำงานโหมด CPU)")
+        return "เครื่องที่ตรวจพบ: " + " | ".join(hw_parts)
+
+    def _update_machine_summary(self) -> None:
+        self._machine_summary_var.set(self._machine_summary_text())
+
+    def _set_machine_check_controls(self, running: bool) -> None:
+        state = "disabled" if running else "normal"
+        if hasattr(self, "check_button"):
+            self.check_button.configure(
+                state=state,
+                text="กำลังตรวจสอบ..." if running else "ตรวจสเปคเครื่อง",
+            )
+        button = getattr(self, "_spec_check_button", None)
+        if button is not None:
+            try:
+                if button.winfo_exists():
+                    button.configure(
+                        state=state,
+                        text="กำลังตรวจสอบ..." if running else "ตรวจสเปคเครื่องใหม่",
+                    )
+            except tk.TclError:
+                pass
+
+    def _start_machine_check(self) -> None:
+        """Probe CPU/RAM/GPU only when the user asks (never at startup)."""
+        if self._machine_check_running:
+            return
+        self._machine_check_running = True
+        self._set_machine_check_controls(True)
+        self._update_model_hint()
+
+        def worker():
+            try:
+                profile = _detect_machine_profile()
+            except Exception:
+                profile = None
+            try:
+                self.root.after(0, self._apply_machine_profile, profile)
+            except Exception:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_machine_profile(self, profile: dict | None) -> None:
+        self._machine_profile = profile
+        self._machine_check_running = False
+        self._set_machine_check_controls(False)
+        self._update_machine_summary()
+        self._update_model_hint()
 
     def _show_model_specs(self):
         if self._spec_win is not None and self._spec_win.winfo_exists():
@@ -585,22 +686,19 @@ class RealtimeVoiceGui:
         body = ttk.Frame(win, padding=12)
         body.pack(fill="both", expand=True)
 
-        mp = self._machine_profile
-        hw_parts = [f"CPU {mp.get('cpu_cores', '?')} threads"]
-        if mp.get("ram_gb"):
-            hw_parts.append(f"RAM {mp['ram_gb']} GB")
-        if mp.get("cuda_ready"):
-            gpu = mp.get("gpu_name") or "NVIDIA GPU"
-            vram = f" ({mp['vram_gb']} GB)" if mp.get("vram_gb") else ""
-            hw_parts.append(f"GPU: {gpu}{vram} [CUDA พร้อม]")
-        else:
-            hw_parts.append("GPU: ไม่พบ CUDA (ทำงานโหมด CPU)")
-
+        header = ttk.Frame(body)
+        header.pack(fill="x", pady=(0, 8))
         ttk.Label(
-            body,
-            text="เครื่องที่ตรวจพบ: " + " | ".join(hw_parts),
+            header,
+            textvariable=self._machine_summary_var,
             font=("Segoe UI", 10, "bold"),
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(side="left", fill="x", expand=True)
+        self._spec_check_button = ttk.Button(
+            header, text="ตรวจสเปคเครื่องใหม่", command=self._start_machine_check
+        )
+        self._spec_check_button.pack(side="right", padx=(8, 0))
+        if self._machine_check_running:
+            self._spec_check_button.configure(state="disabled", text="กำลังตรวจสอบ...")
 
         columns = ("model", "lang", "vram", "ram", "min_spec", "rec_spec", "note")
         tree = ttk.Treeview(body, columns=columns, show="headings", height=7)
@@ -638,6 +736,11 @@ class RealtimeVoiceGui:
             text="คำแนะนำ: ถ้าต้องเปิดคู่เกมหรือโปรแกรมกิน GPU หนัก แนะนำ Turbo หรือ Small เพื่อลดการใช้ VRAM",
             foreground="#555",
         ).pack(anchor="w", pady=(8, 0))
+
+        # Opening this dialog is an explicit user action, so it is fine to run
+        # the hardware check now (in the background) when it has not run yet.
+        if self._machine_profile is None and not self._machine_check_running:
+            self._start_machine_check()
 
     def _poll_target(self):
         if self.app is not None and self.app.target_tracker is not None:
