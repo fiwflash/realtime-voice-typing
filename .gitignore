@@ -16,10 +16,18 @@ dist/
 # ---- Local speech models (several GB — never commit) ----
 models/
 
+# ---- Build / release output ----
+build/
+dist/
+release/
+
 # ---- Runtime output ----
 *.wav
 *.log
 .cache/
+state.json
+downloads/
+cuda/
 
 # ---- Editor / OS ----
 .vscode/

@@ -1,56 +1,81 @@
 """Speech-to-text using faster-whisper with automatic language detection."""
 
+from __future__ import annotations
+
 import os
-import tempfile
 from pathlib import Path
 
 import numpy as np
+
+from .paths import cuda_dir
 
 _DLL_HANDLES: list = []
 _DLL_DIRS_ADDED = False
 
 
-def _nvidia_bin_dirs() -> list:
+def _app_cuda_dirs() -> list[str]:
+    """The optional CUDA runtime pack installed by the app itself."""
+    root = cuda_dir()
+    if not root.is_dir():
+        return []
+    dirs = [str(root)]
+    bin_dir = root / "bin"
+    if bin_dir.is_dir():
+        dirs.append(str(bin_dir))
+    return dirs
+
+
+def _nvidia_bin_dirs() -> list[str]:
+    """CUDA DLLs installed through pip (used by source/development runs)."""
     import importlib.util
 
+    dirs = _app_cuda_dirs()
     try:
         spec = importlib.util.find_spec("nvidia")
     except Exception:
-        return []
+        return dirs
     if spec is None or not spec.submodule_search_locations:
-        return []
+        return dirs
     root = Path(spec.submodule_search_locations[0])
-    return [str(d) for d in root.glob("*/bin") if d.is_dir()]
+    dirs.extend(str(d) for d in root.glob("*/bin") if d.is_dir())
+    return dirs
 
 
-def _add_nvidia_dll_dirs() -> None:
-    """Make CUDA DLLs installed via pip (nvidia-*-cu12 wheels) discoverable.
-
-    ctranslate2 loads cublas/cudnn DLLs lazily, but pip installs them under
-    ``site-packages/nvidia/*/bin`` which is not on the DLL search path. We add
-    those directories to both the process PATH and the DLL search directories
-    so GPU execution works without the user editing PATH by hand.
-    """
-    global _DLL_DIRS_ADDED
-    if os.name != "nt" or _DLL_DIRS_ADDED:
-        return
-    _DLL_DIRS_ADDED = True
-
-    dirs = _nvidia_bin_dirs()
-    if not dirs:
-        return
-
+def _add_dll_dirs(dirs: list[str]) -> None:
     existing = os.environ.get("PATH", "")
     for d in dirs:
-        if d not in existing:
+        if d not in existing.split(os.pathsep):
             existing = d + os.pathsep + existing
     os.environ["PATH"] = existing
 
     for d in dirs:
         try:
             _DLL_HANDLES.append(os.add_dll_directory(d))
-        except OSError:
+        except (OSError, AttributeError):
             pass
+
+
+def _add_nvidia_dll_dirs() -> None:
+    """Make CUDA DLLs discoverable before ctranslate2 loads them.
+
+    ctranslate2 loads cuBLAS/cuDNN lazily, but they are not on the DLL search
+    path by default. This covers both the app's own CUDA pack and pip-installed
+    ``nvidia-*-cu12`` wheels used during development.
+    """
+    global _DLL_DIRS_ADDED
+    if os.name != "nt" or _DLL_DIRS_ADDED:
+        return
+    _DLL_DIRS_ADDED = True
+    dirs = _nvidia_bin_dirs()
+    if dirs:
+        _add_dll_dirs(dirs)
+
+
+def refresh_dll_paths() -> None:
+    """Re-scan CUDA DLL folders after the user installs the GPU pack."""
+    global _DLL_DIRS_ADDED
+    _DLL_DIRS_ADDED = False
+    _add_nvidia_dll_dirs()
 
 
 # Run once at import so the DLLs are on the search path before ctranslate2
@@ -58,10 +83,40 @@ def _add_nvidia_dll_dirs() -> None:
 _add_nvidia_dll_dirs()
 
 
+_CUDA_RUNTIME_DLLS = ("cublas64_12.dll", "cublasLt64_12.dll", "cudnn64_9.dll")
+
+
+def _has_cuda_runtime() -> bool:
+    """Check that cuBLAS/cuDNN really exist where this process can load them.
+
+    ``get_supported_compute_types("cuda")`` can succeed from the driver alone,
+    so it is not enough to decide whether a model can actually run on GPU.
+    """
+    for directory in _nvidia_bin_dirs():
+        try:
+            if all((Path(directory) / name).is_file() for name in _CUDA_RUNTIME_DLLS):
+                return True
+        except OSError:
+            continue
+    for directory in os.environ.get("PATH", "").split(os.pathsep):
+        if not directory:
+            continue
+        try:
+            if all((Path(directory) / name).is_file() for name in _CUDA_RUNTIME_DLLS):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def cuda_available() -> bool:
+    if not _has_cuda_runtime():
+        return False
     try:
         import ctranslate2
 
+        if ctranslate2.get_cuda_device_count() < 1:
+            return False
         ctranslate2.get_supported_compute_types("cuda")
         return True
     except Exception:
@@ -128,20 +183,12 @@ class SpeechEngine:
 
     def transcribe(self, audio: np.ndarray, sample_rate: int) -> tuple[str, str]:
         """Return (text, language_code) for a mono float32 utterance."""
-        import soundfile as sf
-
-        fd, path = tempfile.mkstemp(suffix=".wav")
-        os.close(fd)
-        try:
-            sf.write(path, audio.astype("float32"), sample_rate)
-            segments, info = self.model.transcribe(
-                path,
-                language=self.language,
-                vad_filter=False,
-                beam_size=5,
-                condition_on_previous_text=False,
-            )
-            text = "".join(segment.text for segment in segments).strip()
-            return text, info.language
-        finally:
-            os.unlink(path)
+        segments, info = self.model.transcribe(
+            np.ascontiguousarray(audio, dtype=np.float32),
+            language=self.language,
+            vad_filter=False,
+            beam_size=5,
+            condition_on_previous_text=False,
+        )
+        text = "".join(segment.text for segment in segments).strip()
+        return text, info.language

@@ -3,6 +3,9 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from .model_manager import MODEL_CATALOG
+from .paths import models_dir
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -29,35 +32,25 @@ class Settings:
     hotkey: str = "f8"
 
 
-# Directory holding locally converted (CTranslate2) models.
-MODELS_DIR = Path(__file__).resolve().parents[2] / "models"
-
-def _local_model_choice(folder: str, label: str) -> tuple[str, str] | None:
-    """Offer a converted local model only when its folder actually exists."""
-    path = MODELS_DIR / folder
-    return (label, str(path)) if path.is_dir() else None
+# Directory holding downloaded / locally converted (CTranslate2) models.
+MODELS_DIR = models_dir()
 
 
 # Model choices for the GUI: (display label, value).
-# Values are either a faster-whisper size name or a path to a converted model.
-MODEL_CHOICES = [
-    ("Turbo — Thai+EN (fast)", "turbo"),
-    ("Large v3 — Thai+EN (accurate)", "large-v3"),
-    ("Medium — balanced", "medium"),
-    ("Small — light", "small"),
-]
-
-for _choice in (
-    _local_model_choice("th-distill", "Thai Distill — Thai (fast)"),
-    _local_model_choice("th-pathumma", "Pathumma — Thai+EN (accurate)"),
-):
-    if _choice is not None:
-        MODEL_CHOICES.append(_choice)
+# Values are stable model keys; model_manager resolves them to a local folder.
+MODEL_CHOICES = [(entry.label, entry.key) for entry in MODEL_CATALOG]
 
 # Text destination choices for the GUI: (display label, value).
 DESTINATION_CHOICES = [
     ("Follow Cursor (current focus)", "follow_cursor"),
     ("Last focused window", "last_focus"),
+]
+
+# Processing device choices: (display label, value).
+DEVICE_CHOICES = [
+    ("อัตโนมัติ — ใช้ GPU ถ้าพร้อม", "auto"),
+    ("GPU (CUDA) — เร็วสุด", "cuda"),
+    ("CPU — ใช้ได้ทุกเครื่อง", "cpu"),
 ]
 
 
@@ -117,7 +110,7 @@ MODEL_SPECS: list[ModelSpecInfo] = [
         cpu_realtime_ok=True,
     ),
     ModelSpecInfo(
-        key=str(MODELS_DIR / "th-distill"),
+        key="th-distill",
         label="Thai Distill — Thai (fast)",
         languages="ไทยล้วน",
         disk_gb="~1.55 GB",
@@ -143,7 +136,7 @@ MODEL_SPECS: list[ModelSpecInfo] = [
         cpu_realtime_ok=False,
     ),
     ModelSpecInfo(
-        key=str(MODELS_DIR / "th-pathumma"),
+        key="th-pathumma",
         label="Pathumma — Thai+EN (accurate)",
         languages="ไทย + อังกฤษ",
         disk_gb="~2.95 GB",

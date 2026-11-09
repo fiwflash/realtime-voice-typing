@@ -26,14 +26,15 @@
 - [ความต้องการของระบบ](#ความต้องการของระบบ)
 - [สเปคแต่ละโมเดล](#สเปคแต่ละโมเดล)
 - [การติดตั้ง](#การติดตั้ง)
+- [จัดการโมเดลและ CUDA Runtime](#จัดการโมเดลและ-cuda-runtime)
 - [วิธีใช้](#วิธีใช้)
 - [โหมดไอคอนลอย](#โหมดไอคอนลอย)
 - [การเลือกโมเดล](#การเลือกโมเดล)
-- [โมเดลไทย (ไม่รวมใน repo)](#โมเดลไทย-ไม่รวมใน-repo)
 - [Text Destination](#text-destination)
 - [โครงสร้างโปรเจกต์](#โครงสร้างโปรเจกต์)
 - [ปรับแต่ง](#ปรับแต่ง)
 - [พัฒนาและทดสอบ](#พัฒนาและทดสอบ)
+- [แพ็กเกจเป็นตัวติดตั้ง](#แพ็กเกจเป็นตัวติดตั้ง)
 - [แก้ปัญหาที่พบบ่อย](#แก้ปัญหาที่พบบ่อย)
 - [ความเป็นส่วนตัว](#ความเป็นส่วนตัว)
 - [License & Credits](#license--credits)
@@ -64,10 +65,10 @@
 | รายการ | ขั้นต่ำ |
 |---|---|
 | ระบบปฏิบัติการ | Windows 10 / 11 (64-bit) — แอปใช้ Win32 API โดยตรง |
-| Python | 3.10 – 3.13 (ทดสอบบน 3.13) |
+| Python | **ไม่ต้องติดตั้ง** เมื่อใช้ตัวติดตั้ง (ฝัง runtime ไว้แล้ว) / 3.10 – 3.13 สำหรับรันจากซอร์ส |
 | ไมโครโฟน | 1 ตัว (ค่าเริ่มต้นของ Windows) |
 | RAM | 8 GB (โมเดล Small) / 16 GB (Turbo ขึ้นไป) |
-| ดิสก์ว่าง | ~3 GB (Turbo) / ~12 GB (เก็บครบทุกโมเดล) |
+| ดิสก์ว่าง | ~0.3 GB สำหรับตัวแอป + 0.5–3 GB ต่อโมเดลที่เลือก |
 | GPU | ไม่จำเป็น — รันบน CPU ได้ แต่จะช้ากว่า |
 
 ### แนะนำ
@@ -102,14 +103,38 @@
 
 ## การติดตั้ง
 
-### 1) โคลนโปรเจกต์
+### วิธีที่ 1 — ตัวติดตั้ง (แนะนำ)
+
+1. ดาวน์โหลด **`RealtimeVoiceTyping-Setup-1.0.0.exe`** จากหน้า [Releases](https://github.com/fiwflash/realtime-voice-typing/releases/latest)
+2. ดับเบิลคลิกเพื่อติดตั้ง — ไม่ต้องใช้สิทธิ์ Administrator และ **ไม่ต้องมี Python ในเครื่อง**
+3. เปิดแอป หน้าต่าง **“จัดการโมเดล”** จะเปิดขึ้นอัตโนมัติในครั้งแรก ให้เลือกโมเดลแล้วกด **ดาวน์โหลดโมเดลที่เลือก**
+   - เครื่องทั่วไป / CPU ล้วน → **Small** หรือ **Medium**
+   - เครื่องมีการ์ดจอ NVIDIA → กด **ติดตั้ง** ในส่วน CUDA Runtime ก่อน แล้วจึงใช้ **Turbo / Large v3 / Pathumma**
+4. เลือกอุปกรณ์ประมวลผลในช่อง **ประมวลผล** เป็น `อัตโนมัติ` (แนะนำ) หรือบังคับ `GPU` / `CPU`
+
+ตัวติดตั้งมีขนาดประมาณ **70 MB** และทำงานบน CPU ได้ทันทีหลังติดตั้ง โมเดลและ CUDA Runtime จะดาวน์โหลดแยกเมื่อผู้ใช้เลือก เพื่อให้ไฟล์ติดตั้งเล็กและไม่ต้องโหลดของที่ไม่ใช้
+
+ไฟล์ที่ดาวน์โหลดเพิ่มจะอยู่ใน:
+
+```text
+%LOCALAPPDATA%\RealtimeVoiceTyping\
+├─ models\        # โมเดล Whisper ที่เลือก
+├─ cuda\          # CUDA Runtime สำหรับ GPU (ถ้าติดตั้ง)
+└─ state.json     # โมเดล/โหมด/ตำแหน่งไอคอนล่าสุด
+```
+
+> ถอนการติดตั้งจะไม่ลบโมเดลโดยอัตโนมัติ (ถามตอนถอน) เพื่อไม่ต้องดาวน์โหลดซ้ำ
+
+### วิธีที่ 2 — รันจากซอร์ส
+
+#### 1) โคลนโปรเจกต์
 
 ```powershell
 git clone https://github.com/fiwflash/realtime-voice-typing.git
 cd realtime-voice-typing
 ```
 
-### 2) สร้าง virtual environment (แนะนำ)
+#### 2) สร้าง virtual environment (แนะนำ)
 
 ```powershell
 python -m venv .venv
@@ -118,14 +143,14 @@ python -m venv .venv
 
 > ถ้า PowerShell บล็อกสคริปต์ ให้รัน `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` ก่อน แล้วค่อย activate ใหม่
 
-### 3) ติดตั้ง dependencies
+#### 3) ติดตั้ง dependencies
 
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-### 4) (ถ้ามี GPU NVIDIA) ติดตั้ง CUDA runtime
+#### 4) (ถ้ามี GPU NVIDIA) ติดตั้ง CUDA runtime
 
 ไม่ต้องลง CUDA Toolkit ทั้งชุด ขอแค่มีไดรเวอร์ NVIDIA ที่ใหม่พอ แล้วติดตั้ง wheel เหล่านี้:
 
@@ -135,7 +160,7 @@ python -m pip install -r requirements-cuda.txt
 
 โค้ดจะค้นหา DLL ของ CUDA ที่ติดตั้งผ่าน pip ให้เอง และเลือก `cuda` อัตโนมัติถ้าใช้ได้ (ไม่ต้องแก้ PATH)
 
-### 5) เปิดโปรแกรม
+#### 5) เปิดโปรแกรม
 
 ```powershell
 python run_realtime.py
@@ -143,7 +168,33 @@ python run_realtime.py
 
 หรือดับเบิลคลิก `start_realtime.bat`
 
-> **ครั้งแรกจะดาวน์โหลดโมเดล Turbo (~1.6 GB)** จาก Hugging Face ลงแคชในเครื่อง หลังจากนั้นเปิดใช้ออฟไลน์ได้เลย
+> การรันจากซอร์สจะใช้โฟลเดอร์ `models/` ในโปรเจกต์ และดาวน์โหลดโมเดลผ่าน Hugging Face แคชแบบเดิม
+
+## จัดการโมเดลและ CUDA Runtime
+
+ปุ่ม **“จัดการโมเดล”** ในหน้า Settings รวมทุกอย่างไว้ในหน้าต่างเดียว:
+
+| ส่วน | รายละเอียด |
+|---|---|
+| รายการโมเดล | แสดงขนาด ภาษา และสถานะ “ติดตั้งแล้ว / ยังไม่ติดตั้ง” |
+| ดาวน์โหลด | ดาวน์โหลดเฉพาะโมเดลที่เลือก พร้อมแถบความคืบหน้า |
+| ลบ | คืนพื้นที่โดยไม่กระทบโมเดลอื่น |
+| CUDA Runtime | ติดตั้ง/ถอนแพ็ก CUDA สำหรับ GPU NVIDIA (~1.2 GB ดาวน์โหลด, ~1.95 GB หลังแตกไฟล์) |
+
+โมเดลที่ดาวน์โหลดได้จากในแอป:
+
+| โมเดล | ภาษา | ขนาด | แหล่งที่มา |
+|---|---|---:|---|
+| **Small** | ไทย + อังกฤษ | ~0.5 GB | [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small) |
+| **Medium** | ไทย + อังกฤษ | ~1.5 GB | [Systran/faster-whisper-medium](https://huggingface.co/Systran/faster-whisper-medium) |
+| **Turbo** | ไทย + อังกฤษ | ~1.6 GB | [mobiuslabsgmbh/faster-whisper-large-v3-turbo](https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo) |
+| **Large v3** | ไทย + อังกฤษ | ~3.0 GB | [Systran/faster-whisper-large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) |
+| **Thai Distill** | ไทยล้วน | ~3.0 GB | [Vinxscribe/biodatlab-whisper-th-large-v3-faster](https://huggingface.co/Vinxscribe/biodatlab-whisper-th-large-v3-faster) |
+| **Pathumma** | ไทย + อังกฤษ | ~3.0 GB | [PogusTheWhisper/Faster-Pathumma-whisper-th-large-v3-ct2](https://huggingface.co/PogusTheWhisper/Faster-Pathumma-whisper-th-large-v3-ct2) |
+
+> **CUDA Runtime pack** คือ cuBLAS + cuDNN + NVRTC + cudart เวอร์ชัน 12 ที่แอปโหลดแยกจาก GitHub Releases แล้วเก็บไว้ใน `%LOCALAPPDATA%\RealtimeVoiceTyping\cuda` — ไม่ทับซ้อนกับ CUDA ที่ติดตั้งในเครื่อง และถอนออกได้ทุกเมื่อ ถ้าไม่มีแพ็กนี้แอปจะทำงานบน CPU ต่อไป
+
+หลังติดตั้ง CUDA Runtime โดยทั่วไปไม่ต้องรีสตาร์ตแอป ให้กด **“ตรวจสเปคเครื่อง”** อีกครั้งเพื่อยืนยันว่าเห็น GPU (ถ้ายังไม่เห็น ให้ปิด-เปิดแอปใหม่หนึ่งครั้ง)
 
 ## วิธีใช้
 
@@ -173,32 +224,18 @@ python run_realtime.py
 
 ## การเลือกโมเดล
 
-เลือกได้จากช่อง **Model** ในหน้า Settings แล้วกด **Apply**:
+เลือกจากช่อง **Model** ในหน้า Settings แล้วกด **Apply**:
 
-- โมเดลมาตรฐาน `Turbo`, `Large v3`, `Medium`, `Small` จะดาวน์โหลดจาก Hugging Face อัตโนมัติเมื่อใช้ครั้งแรก
-- ใต้ช่อง Model จะแสดง **VRAM/RAM/สเปคแนะนำ** ของโมเดลที่เลือกแบบคงที่ (ไม่ตรวจเครื่องอัตโนมัติตอนเปิดโปรแกรม)
+- โมเดลทุกตัว (รวม Thai Distill และ Pathumma) ดาวน์โหลดผ่านหน้าต่าง **“จัดการโมเดล”** ไม่ดาวน์โหลดเงียบ ๆ ตอนเริ่มฟัง
+- ใต้ช่อง Model แสดง **VRAM/RAM/สเปคแนะนำ** และสถานะว่าดาวน์โหลดแล้วหรือยัง
+- ช่อง **ประมวลผล** เลือก `อัตโนมัติ` (ใช้ GPU ถ้าพร้อม), `GPU (CUDA)` หรือ `CPU`
 - กดปุ่ม **“ตรวจสเปคเครื่อง”** (หรือเปิดหน้าต่าง **“สเปคแต่ละโมเดล”**) เพื่อตรวจ CPU/RAM/GPU จริงของเครื่อง — ครั้งแรกอาจใช้เวลาราว 5–10 วินาที เพราะต้องโหลด CUDA แต่ทำงานเบื้องหลัง UI ไม่ค้าง
 - หลังตรวจแล้ว ถ้าเครื่องไม่มี CUDA หรือ VRAM น้อยกว่าที่แนะนำ ระบบจะขึ้นคำเตือนสีส้มและแนะนำให้ใช้ Turbo หรือ Small
 - ปุ่ม **“สเปคแต่ละโมเดล”** เปิดตารางเปรียบเทียบครบทั้ง 6 โมเดล
 
-## โมเดลไทย (ไม่รวมใน repo)
+> โหมดติดตั้ง: ถ้าเลือกโมเดลที่ยังไม่ดาวน์โหลดแล้วกด Start ระบบจะถามและเปิดหน้าจัดการโมเดลให้อัตโนมัติ
 
-โมเดลที่แปลงเป็น CTranslate2 แล้วมีขนาดใหญ่ (รวม ~4.4 GB) จึง **ไม่ถูกอัปโหลดขึ้น Git** โปรเจกต์จะแสดงตัวเลือกเหล่านี้ใน dropdown ก็ต่อเมื่อพบโฟลเดอร์จริงในเครื่อง:
-
-- `models/th-distill` — [biodatlab/distill-whisper-th-large-v3](https://huggingface.co/biodatlab/distill-whisper-th-large-v3) (MIT) — ไทยล้วน, WER ~6.8%
-- `models/th-pathumma` — [nectec/Pathumma-whisper-th-large-v3](https://huggingface.co/nectec/Pathumma-whisper-th-large-v3) (Apache-2.0) — ไทย + อังกฤษ
-
-ถ้าต้องการใช้โมเดลเหล่านี้ ให้แปลงเองด้วยคำสั่งด้านล่าง (ต้องมีพื้นที่ว่างหลาย GB และควรมี GPU สำหรับขั้นตอนแปลง):
-
-```powershell
-python -m pip install "transformers>=4.40" "torch>=2.1"
-
-ct2-transformers-converter --model biodatlab/distill-whisper-th-large-v3 --output_dir models/th-distill --quantization float16 --copy_files tokenizer.json preprocessor_config.json
-
-ct2-transformers-converter --model nectec/Pathumma-whisper-th-large-v3 --output_dir models/th-pathumma --quantization float16 --copy_files tokenizer.json preprocessor_config.json
-```
-
-> ชื่อโฟลเดอร์ต้องเป็น `th-distill` และ `th-pathumma` ตามที่กำหนด แอปจะตรวจพบและเพิ่มเข้า dropdown ให้เอง
+**ใช้โมเดล CTranslate2 ของคุณเอง:** วางโฟลเดอร์ที่มี `model.bin`, `config.json`, `tokenizer.json` และ `vocabulary.*` ไว้ที่ `models/th-distill` หรือ `models/th-pathumma` (หรือใต้ `%LOCALAPPDATA%\RealtimeVoiceTyping\models\`) แล้วเลือกชื่อนั้นใน dropdown
 
 ## Text Destination
 
@@ -217,10 +254,12 @@ ct2-transformers-converter --model nectec/Pathumma-whisper-th-large-v3 --output_
 
 ```text
 realtime-voice-typing/
-├─ run_realtime.py              # entry point
+├─ run_realtime.py              # entry point (source)
+├─ app_entry.py                 # entry point (PyInstaller build)
 ├─ start_realtime.bat           # double-click launcher
 ├─ requirements.txt             # runtime dependencies
-├─ requirements-cuda.txt        # optional NVIDIA CUDA runtime
+├─ requirements-cuda.txt        # optional NVIDIA CUDA wheels (source)
+├─ requirements-build.txt       # PyInstaller
 ├─ assets/
 │  ├─ voice_icon_idle.png       # 256px source art (stopped / red)
 │  ├─ voice_icon_listening.png  # 256px source art (listening / green)
@@ -231,14 +270,25 @@ realtime-voice-typing/
 ├─ src/realtime_voice_typing/
 │  ├─ app.py                    # capture → VAD → transcribe → insert loop
 │  ├─ audio.py                  # sounddevice input stream
-│  ├─ gui.py                    # Tkinter UI + layered floating icon
+│  ├─ cuda_pack.py              # optional GPU runtime download/install
+│  ├─ gui.py                    # Tkinter UI, model manager, floating icon
 │  ├─ inserter.py               # Unicode SendInput / clipboard fallback
+│  ├─ model_manager.py          # model catalogue + download/delete
+│  ├─ paths.py                  # source vs installed paths
 │  ├─ settings.py               # defaults, model list, model specs
+│  ├─ smoke.py                  # frozen-build self test
 │  ├─ speech.py                 # faster-whisper engine + CUDA DLL setup
+│  ├─ store.py                  # JSON state (model/mode/icon position)
 │  ├─ vad.py                    # energy-based utterance segmentation
 │  └─ windows_target.py         # foreground-window tracking
+├─ packaging/
+│  ├─ realtime_voice_typing.spec  # PyInstaller onedir spec
+│  ├─ installer.iss               # Inno Setup (single .exe installer)
+│  ├─ build.ps1 / build_installer.ps1
+│  ├─ make_gpu_pack.py            # builds cuda-runtime-win64.zip
+│  └─ version_info.txt
 ├─ tests/                       # unit tests (pytest)
-└─ models/                      # local converted models (git-ignored)
+└─ models/                      # local models for source runs (git-ignored)
 ```
 
 ## ปรับแต่ง
@@ -262,16 +312,51 @@ realtime-voice-typing/
 ```powershell
 # รัน unit tests
 python -m pytest tests -q
+
+# ทดสอบไฟล์ที่แพ็กแล้ว (ไม่ต้องใช้ไมโครโฟน)
+$env:RVT_SMOKE_TEST = "$env:TEMP\rvt-smoke.json"
+$env:RVT_SMOKE_MODEL = "small"   # ถ้ามีโมเดลอยู่แล้ว
+& ".\dist\RealtimeVoiceTyping\RealtimeVoiceTyping.exe"
+Get-Content $env:TEMP\rvt-smoke.json
 ```
 
-ชุดทดสอบครอบคลุม VAD, Unicode inserter, window tracking และข้อมูลสเปคโมเดล — ไม่ต้องใช้ไมโครโฟนหรือ GPU
+ชุดทดสอบครอบคลุม VAD, Unicode inserter, window tracking และข้อมูลสเปคโมเดล — ไม่ต้องใช้ไมโครโฟนหรือ GPU ส่วน smoke test ตรวจว่าไฟล์ที่แพ็กแล้วเปิด GUI, โหลด CUDA และดาวน์โหลดโมเดลได้จริง
 
 โครงสร้างโค้ดแยกส่วนชัดเจน: `app.py` เป็นตัวควบคุมหลัก, `speech.py` รับผิดชอบโมเดล, `gui.py` เป็น UI และไอคอนลอย
+
+## แพ็กเกจเป็นตัวติดตั้ง
+
+```powershell
+python -m pip install -r requirements-build.txt
+
+# 1) สร้างโฟลเดอร์แอป (onedir) ที่ dist\RealtimeVoiceTyping
+.\packaging\build.ps1
+
+# 2) ห่อเป็นตัวติดตั้งเดี่ยวที่ release\RealtimeVoiceTyping-Setup-1.0.0.exe
+.\packaging\build_installer.ps1
+
+# 3) (ไม่บังคับ) สร้างแพ็ก CUDA สำหรับ GPU จาก wheel ที่ติดตั้งไว้
+python packaging\make_gpu_pack.py
+```
+
+- ตัวติดตั้งสร้างด้วย **Inno Setup 6** (ติดตั้งที่ `%LOCALAPPDATA%\Programs\InnoSetup6` หรือ `C:\Program Files (x86)\Inno Setup 6`) สคริปต์จะหา `ISCC.exe` ให้อัตโนมัติ
+- ใช้ **onedir** ไม่ใช่ onefile เพราะ onefile ต้องแตกไฟล์หลายร้อย MB ทุกครั้งที่เปิด
+- ตัวติดตั้งติดตั้งแบบ per-user (`%LOCALAPPDATA%\Programs\RealtimeVoiceTyping`) จึงไม่ต้องใช้สิทธิ์ Administrator
+- แพ็ก CUDA ถูกอัปโหลดเป็น GitHub Release asset และแอปดาวน์โหลดผ่าน URL ใน `cuda_pack.py`; อย่าลืมอัปเดต `CUDA_PACK_SHA256` เมื่อสร้างแพ็กใหม่
 
 ## แก้ปัญหาที่พบบ่อย
 
 <details>
 <summary><b>ตรวจไม่พบ GPU / ใช้ CPU อยู่</b></summary>
+
+**ถ้าใช้ตัวติดตั้ง:**
+
+1. อัปเดตไดรเวอร์ NVIDIA ให้เป็นรุ่นล่าสุด
+2. เปิด **จัดการโมเดล → CUDA Runtime** แล้วกด **ติดตั้ง**
+3. ปิด/เปิดแอปใหม่ แล้วกด **ตรวจสเปคเครื่อง**
+4. ถ้ายังไม่เห็น GPU ให้รีสตาร์ตเครื่องหนึ่งครั้ง
+
+**ถ้ารันจากซอร์ส:**
 
 1. อัปเดตไดรเวอร์ NVIDIA
 2. ติดตั้ง `python -m pip install -r requirements-cuda.txt`
@@ -300,8 +385,8 @@ python -m pytest tests -q
 <details>
 <summary><b>กด F8 แล้วไม่ทำงาน</b></summary>
 
-- `keyboard` ต้องการสิทธิ์ที่สูงกว่าในบางหน้าต่าง → ลอง Run as administrator
-- ใช้ปุ่ม Start/Stop ในหน้าต่างหรือคลิกไอคอนลอยแทนได้
+- ปุ่มลัดใช้ Win32 `RegisterHotKey` — ถ้าแอปอื่นจองปุ่ม F8 ไว้แล้วจะใช้ไม่ได้ เปิดโปรแกรมนี้ก่อนแอปอื่น หรือใช้ปุ่ม Start/Stop ในหน้าต่าง/คลิกไอคอนลอยแทน
+- หากแอปปลายทางรันด้วยสิทธิ์ Administrator อาจบังผลการกดปุ่ม → ลอง Run as administrator
 </details>
 
 <details>
@@ -319,8 +404,8 @@ python -m pytest tests -q
 ## ความเป็นส่วนตัว
 
 - เสียงถูกประมวลผลในเครื่องด้วย faster-whisper ไม่มีการส่งเสียงไปเซิร์ฟเวอร์
-- ระหว่างถอดเสียง โปรแกรมจะเขียนไฟล์ WAV ชั่วคราวในโฟลเดอร์ temp แล้วลบทิ้งทันที
-- การเชื่อมต่ออินเทอร์เน็ตใช้เฉพาะตอนดาวน์โหลดโมเดลครั้งแรกจาก Hugging Face เท่านั้น
+- ระหว่างถอดเสียง ข้อมูลเสียงอยู่ในหน่วยความจำและถูกส่งเข้าโมเดลโดยตรง **ไม่เขียนไฟล์เสียงลงดิสก์**
+- การเชื่อมต่ออินเทอร์เน็ตใช้เฉพาะตอนดาวน์โหลดโมเดล/CUDA Runtime จาก Hugging Face และ GitHub เท่านั้น
 
 ## License & Credits
 
@@ -350,10 +435,21 @@ python -m pytest tests -q
 - 100% local inference after the first model download
 - Full window + always-on-top floating icon (click = start/stop, drag = move, right-click = menu)
 - Clear status LED: red = stopped, green = microphone open
+- In-app model manager: download/delete models, install the optional CUDA runtime, no Python required
+- One small installer; CPU works immediately, GPU is an optional download
 - Model picker with on-demand hardware check and a full spec comparison table
 - Crisp per-pixel-alpha icon rendering (no color-key fringing)
 
-**Quick start** (Windows 10/11, Python 3.10–3.13)
+**Quick start — installer (recommended)**
+
+1. Download `RealtimeVoiceTyping-Setup-1.0.0.exe` from [Releases](https://github.com/fiwflash/realtime-voice-typing/releases/latest).
+2. Install (no Administrator rights, no Python needed).
+3. The model manager opens on first launch: pick a model and download it. For NVIDIA GPUs, install the CUDA Runtime first.
+4. Press `F8` (or click **Start Listening**), focus the target text field, and speak.
+
+Models live in `%LOCALAPPDATA%\RealtimeVoiceTyping\models`; the optional CUDA pack lives in `%LOCALAPPDATA%\RealtimeVoiceTyping\cuda`.
+
+**Quick start — from source** (Windows 10/11, Python 3.10–3.13)
 
 ```powershell
 git clone https://github.com/fiwflash/realtime-voice-typing.git
@@ -366,9 +462,9 @@ python -m pip install -r requirements-cuda.txt
 python run_realtime.py
 ```
 
-Press `F8` (or click **Start Listening**), focus the target text field, and speak. Text is inserted when you pause. The first run downloads the Turbo model (~1.6 GB); afterwards the app works offline.
+**Models:** Small / Medium / Turbo / Large v3 plus Thai-specific Thai Distill and Pathumma are all downloadable from the in-app manager. After the download the app works offline.
 
-**Models:** Small / Medium / Turbo / Large v3 download automatically. The Thai-specific `th-distill` and `th-pathumma` models are optional local CTranslate2 conversions and are not included in this repository (see the Thai section above).
+**Build the installer:** `packaging\build.ps1`, then `packaging\build_installer.ps1` (Inno Setup 6). See the Thai section for details.
 
 **Tests:** `python -m pytest tests -q`
 

@@ -12,23 +12,29 @@ from pathlib import Path
 import subprocess
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 import numpy as np
 
+from . import cuda_pack, model_manager
 from .app import RealtimeVoiceApp
+from .hotkey import GlobalHotkey
+from .model_manager import MODEL_LABEL_BY_KEY
+from .paths import assets_dir, is_frozen
 from .settings import (
     DESTINATION_CHOICES,
+    DEVICE_CHOICES,
     MODEL_CHOICES,
     MODEL_SPECS,
     Settings,
     get_model_spec,
 )
-from .speech import cuda_available
+from .speech import cuda_available, refresh_dll_paths
+from .store import load_state, save_state
 
 
 ICON_SIZE = 72
-ASSETS_DIR = Path(__file__).resolve().parents[2] / "assets"
+ASSETS_DIR = assets_dir()
 
 GWL_EXSTYLE = -20
 WS_EX_LAYERED = 0x00080000
@@ -283,8 +289,8 @@ class RealtimeVoiceGui:
     def __init__(self, root):
         self.root = root
         self.root.title("Real-time Voice Typing")
-        self.root.geometry("580x590")
-        self.root.minsize(500, 460)
+        self.root.geometry("720x700")
+        self.root.minsize(640, 560)
         self.root.attributes("-topmost", True)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         try:
@@ -292,6 +298,7 @@ class RealtimeVoiceGui:
         except tk.TclError:
             pass
 
+        self._state = load_state()
         self._mode = "full"
         self._press = None
         self._win_pos = (0, 0)
@@ -300,6 +307,13 @@ class RealtimeVoiceGui:
         self._icon_pos = None
         self._spec_win = None
         self._spec_check_button = None
+        self._manager_win = None
+        self._manager_tree = None
+        self._manager_status_var = None
+        self._manager_progress = None
+        self._manager_busy = False
+        self._hotkey = None
+        self._hotkey_poll = None
         # Hardware probing is intentionally on-demand. Importing ctranslate2 and
         # initialising CUDA can take ~8 seconds on the first call, which used to
         # delay every app launch. The user triggers it with a button instead.
@@ -311,30 +325,105 @@ class RealtimeVoiceGui:
 
         self.status_var = tk.StringVar(value="Ready")
         self._model_map = {label: value for label, value in MODEL_CHOICES}
-        default_label = next(label for label, value in MODEL_CHOICES if value == "turbo")
-        self.model_var = tk.StringVar(value=default_label)
+        self.model_var = tk.StringVar(value=self._initial_model_label())
         self.model_var.trace_add("write", self._on_model_selection_change)
         self.model_hint_var = tk.StringVar(value="")
 
         self._dest_map = {label: value for label, value in DESTINATION_CHOICES}
-        dest_default = next(label for label, value in DESTINATION_CHOICES if value == "follow_cursor")
+        saved_dest = self._state.get("destination", "follow_cursor")
+        dest_default = next(
+            (label for label, value in DESTINATION_CHOICES if value == saved_dest),
+            DESTINATION_CHOICES[0][0],
+        )
         self.destination_var = tk.StringVar(value=dest_default)
         self.destination_var.trace_add("write", self._on_destination_change)
+
+        self._device_map = {label: value for label, value in DEVICE_CHOICES}
+        saved_device = self._state.get("device", "auto")
+        self.device_var = tk.StringVar(
+            value=next(
+                (label for label, value in DEVICE_CHOICES if value == saved_device),
+                DEVICE_CHOICES[0][0],
+            )
+        )
 
         self.app = None
         self._build_app()
         self._build_full()
         self._create_icon()
+        self._restore_mode()
         self._register_hotkey()
         self._poll_target()
         self.root.bind_all("<Button-3>", self._on_right_click)
 
+        if (
+            is_frozen()
+            and not os.environ.get("RVT_SMOKE_TEST")
+            and not model_manager.installed_entries()
+        ):
+            self.root.after(500, self._first_run_setup)
+
+    # -- persisted state -----------------------------------------------------
+
+    def _initial_model_label(self) -> str:
+        saved = self._state.get("model")
+        entry = model_manager.get_entry(str(saved)) if saved else None
+        if entry is not None and (not is_frozen() or model_manager.is_installed(entry)):
+            label = MODEL_LABEL_BY_KEY.get(entry.key)
+            if label:
+                return label
+        installed = model_manager.installed_entries()
+        if installed:
+            preferred = next((e for e in installed if e.key == "turbo"), installed[0])
+            label = MODEL_LABEL_BY_KEY.get(preferred.key)
+            if label:
+                return label
+        return MODEL_LABEL_BY_KEY["turbo"]
+
+    def _save_state(self) -> None:
+        if self.app is None:
+            return
+        try:
+            self._state.update(
+                {
+                    "model": self._model_map[self.model_var.get()],
+                    "destination": self._dest_map[self.destination_var.get()],
+                    "device": self._device_map[self.device_var.get()],
+                    "mode": self._mode,
+                }
+            )
+            if self._icon_pos is not None:
+                self._state["icon_pos"] = [int(self._icon_pos[0]), int(self._icon_pos[1])]
+            save_state(self._state)
+        except (KeyError, tk.TclError):
+            pass
+
+    def _restore_mode(self) -> None:
+        pos = self._state.get("icon_pos")
+        if isinstance(pos, list) and len(pos) == 2:
+            try:
+                self._icon_pos = (int(pos[0]), int(pos[1]))
+                size = self._icon_renderer.pixel_size_for(self.icon_win)
+                self.icon_win.geometry(f"{size}x{size}+{self._icon_pos[0]}+{self._icon_pos[1]}")
+            except (TypeError, ValueError, tk.TclError):
+                pass
+        if self._state.get("mode") == "icon":
+            self._switch_to_icon()
+
+    def _first_run_setup(self) -> None:
+        if model_manager.installed_entries():
+            return
+        self.set_status("ยังไม่มีโมเดลในเครื่อง — เลือกและดาวน์โหลดโมเดลก่อนเริ่มใช้งาน")
+        self._open_model_manager(select="turbo")
+
     # -- app ----------------------------------------------------------------
 
     def _build_app(self):
+        model_key = self._model_map[self.model_var.get()]
         self.app = RealtimeVoiceApp(
             settings=Settings(
-                model_size=self._model_map[self.model_var.get()],
+                model_size=model_manager.resolve_model(model_key),
+                device=self._device_map[self.device_var.get()],
                 destination_mode=self._dest_map[self.destination_var.get()],
             ),
             on_status=self.set_status,
@@ -350,7 +439,7 @@ class RealtimeVoiceGui:
 
         ttk.Label(frame, text="Real-time Voice Typing", font=("Segoe UI", 15, "bold")).pack(anchor="w")
         ttk.Label(frame, text="Thai + English (auto-detect)", foreground="#555").pack(anchor="w")
-        ttk.Label(frame, textvariable=self.status_var, wraplength=520).pack(anchor="w", pady=(6, 4))
+        ttk.Label(frame, textvariable=self.status_var, wraplength=600).pack(anchor="w", pady=(6, 4))
 
         level_frame = ttk.Frame(frame)
         level_frame.pack(fill="x", pady=(0, 8))
@@ -374,7 +463,7 @@ class RealtimeVoiceGui:
             state="readonly",
         ).grid(row=0, column=1, sticky="ew")
         ttk.Button(settings, text="Apply", command=self._apply_settings).grid(row=0, column=2, padx=(8, 0))
-        ttk.Button(settings, text="สเปคแต่ละโมเดล", command=self._show_model_specs).grid(
+        ttk.Button(settings, text="จัดการโมเดล", command=self._open_model_manager).grid(
             row=0, column=3, padx=(6, 0)
         )
 
@@ -383,25 +472,36 @@ class RealtimeVoiceGui:
             textvariable=self.model_hint_var,
             justify="left",
             anchor="w",
-            wraplength=510,
+            wraplength=640,
             font=("Segoe UI", 9),
         )
         self.model_hint_label.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(5, 2))
         self._update_model_hint()
 
-        ttk.Label(settings, text="Destination").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(settings, text="ประมวลผล").grid(row=2, column=0, sticky="w", pady=(6, 0))
+        ttk.Combobox(
+            settings,
+            textvariable=self.device_var,
+            values=[label for label, _ in DEVICE_CHOICES],
+            state="readonly",
+        ).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(6, 0))
+
+        ttk.Label(settings, text="Destination").grid(row=3, column=0, sticky="w", pady=(6, 0))
         ttk.Combobox(
             settings,
             textvariable=self.destination_var,
             values=[label for label, _ in DESTINATION_CHOICES],
             state="readonly",
-        ).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(6, 0))
+        ).grid(row=3, column=1, columnspan=3, sticky="ew", pady=(6, 0))
         settings.columnconfigure(1, weight=1)
 
         self.check_button = ttk.Button(
             settings, text="ตรวจสเปคเครื่อง", command=self._start_machine_check
         )
-        self.check_button.grid(row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.check_button.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        ttk.Button(settings, text="สเปคแต่ละโมเดล", command=self._show_model_specs).grid(
+            row=4, column=2, columnspan=2, sticky="e", pady=(8, 0)
+        )
 
         ttk.Label(frame, text="Transcript").pack(anchor="w")
         self.transcript = tk.Text(frame, height=10, wrap="word", state="disabled")
@@ -411,7 +511,7 @@ class RealtimeVoiceGui:
             frame,
             text="Press F8, click Start, or use the floating icon. Right-click anywhere → Icon mode.",
             foreground="#555",
-            wraplength=520,
+            wraplength=640,
         ).pack(anchor="w", pady=(8, 0))
 
     # -- icon window ---------------------------------------------------------
@@ -482,6 +582,8 @@ class RealtimeVoiceGui:
     def _icon_release(self, event):
         if not self._dragged:
             self.toggle()
+        else:
+            self._save_state()
         self._press = None
 
     def _on_right_click(self, event):
@@ -495,11 +597,13 @@ class RealtimeVoiceGui:
         self.root.withdraw()
         self.icon_win.deiconify()
         self._draw_icon()
+        self._save_state()
 
     def _switch_to_full(self):
         self._mode = "full"
         self.icon_win.withdraw()
         self.root.deiconify()
+        self._save_state()
 
     # -- controls ------------------------------------------------------------
 
@@ -508,6 +612,8 @@ class RealtimeVoiceGui:
             self.app.stop()
             self.toggle_button.configure(text="Start Listening")
         else:
+            if not self._ensure_model_ready():
+                return
             self.app.start()
             self.toggle_button.configure(text="Stop Listening")
         self._draw_icon()
@@ -516,6 +622,8 @@ class RealtimeVoiceGui:
         self.app.clear_transcript()
 
     def _apply_settings(self):
+        if not self._ensure_model_ready():
+            return
         was_listening = self.app.is_listening
         last_hwnd = self.app.target_tracker.last_external_hwnd if self.app else None
         if was_listening:
@@ -525,19 +633,403 @@ class RealtimeVoiceGui:
             self.app.target_tracker.last_external_hwnd = last_hwnd
         if was_listening:
             self.app.start()
+        self._update_model_hint()
+        self._save_state()
         self._draw_icon()
 
-    def _register_hotkey(self):
+    # -- model / runtime manager -------------------------------------------
+
+    def _selected_model_key(self) -> str:
+        return self._model_map.get(self.model_var.get(), "turbo")
+
+    def _ensure_model_ready(self) -> bool:
+        key = self._selected_model_key()
+        if model_manager.is_installed(key):
+            return True
+        if not is_frozen():
+            # Development runs may use faster-whisper's own Hugging Face cache.
+            return True
+        answer = messagebox.askyesno(
+            "ยังไม่ได้ติดตั้งโมเดล",
+            "โมเดลที่เลือกยังไม่ได้ดาวน์โหลด\n\n"
+            "ต้องการเปิดหน้าจัดการโมเดลเพื่อดาวน์โหลดตอนนี้หรือไม่?",
+            parent=self.root,
+        )
+        if answer:
+            self._open_model_manager(select=key)
+        return False
+
+    def _open_model_manager(self, select: str | None = None):
+        win = self._manager_win
+        if win is not None and win.winfo_exists():
+            win.deiconify()
+            win.lift()
+            win.focus_force()
+            self._select_manager_row(select or self._selected_model_key())
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("จัดการโมเดลและ CUDA Runtime")
+        win.geometry("820x600")
+        win.minsize(720, 540)
+        win.attributes("-topmost", True)
+        win.transient(self.root)
         try:
-            import keyboard
+            win.iconbitmap(str(ASSETS_DIR / "VoiceTyping.ico"))
+        except tk.TclError:
+            pass
+        self._manager_win = win
 
-            keyboard.add_hotkey(self.app.settings.hotkey, self._hotkey_toggle)
-            self.set_status("Ready. Hotkey: F8")
-        except Exception as exc:
+        body = ttk.Frame(win, padding=12)
+        body.pack(fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text="ดาวน์โหลดเฉพาะโมเดลที่ต้องการ ไฟล์จะเก็บไว้ในเครื่องและใช้ซ้ำได้",
+            font=("Segoe UI", 10, "bold"),
+        ).pack(anchor="w")
+        ttk.Label(
+            body,
+            text=(
+                "แนะนำ: Small สำหรับเครื่องทั่วไป, Turbo สำหรับเครื่องมีการ์ดจอ NVIDIA, "
+                "Pathumma/Large v3 เมื่อต้องการความแม่นยำสูงสุด"
+            ),
+            foreground="#555",
+            wraplength=770,
+            justify="left",
+        ).pack(anchor="w", pady=(2, 8))
+
+        columns = ("model", "size", "lang", "status")
+        tree = ttk.Treeview(body, columns=columns, show="headings", height=8)
+        headings = {
+            "model": ("โมเดล", 280),
+            "size": ("ขนาด", 90),
+            "lang": ("ภาษา", 110),
+            "status": ("สถานะ", 190),
+        }
+        for col, (title, width) in headings.items():
+            tree.heading(col, text=title)
+            tree.column(col, width=width, anchor="w")
+        tree.pack(fill="both", expand=True)
+        tree.tag_configure("installed", foreground="#15803d")
+        self._manager_tree = tree
+        self._refresh_manager_table(select or self._selected_model_key())
+
+        actions = ttk.Frame(body)
+        actions.pack(fill="x", pady=(8, 4))
+        self._manager_download_btn = ttk.Button(
+            actions, text="ดาวน์โหลดโมเดลที่เลือก", command=self._manager_download
+        )
+        self._manager_download_btn.pack(side="left")
+        self._manager_delete_btn = ttk.Button(
+            actions, text="ลบโมเดลที่เลือก", command=self._manager_delete
+        )
+        self._manager_delete_btn.pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="ปิด", command=win.destroy).pack(side="right")
+
+        gpu_box = ttk.LabelFrame(body, text="CUDA Runtime สำหรับ GPU (ไม่บังคับ)", padding=8)
+        gpu_box.pack(fill="x", pady=(8, 4))
+        self._manager_gpu_var = tk.StringVar(value="")
+        ttk.Label(
+            gpu_box,
+            textvariable=self._manager_gpu_var,
+            wraplength=600,
+            justify="left",
+        ).pack(side="left", fill="x", expand=True)
+        self._manager_gpu_btn = ttk.Button(
+            gpu_box, text="ติดตั้ง", command=self._manager_gpu_toggle
+        )
+        self._manager_gpu_btn.pack(side="right", padx=(8, 0))
+        self._refresh_gpu_row()
+
+        self._manager_status_var = tk.StringVar(value="พร้อมใช้งาน")
+        self._manager_progress = ttk.Progressbar(body, maximum=100)
+        self._manager_progress.pack(fill="x", pady=(8, 2))
+        ttk.Label(
+            body,
+            textvariable=self._manager_status_var,
+            foreground="#555",
+            wraplength=770,
+            justify="left",
+        ).pack(anchor="w")
+
+        ttk.Label(
+            body,
+            text=(
+                "หมายเหตุ: โมเดลถูกเก็บไว้ที่ "
+                f"{model_manager.models_dir()} และจะไม่ถูกลบเมื่อถอนการติดตั้งโปรแกรม"
+            ),
+            foreground="#777",
+            wraplength=770,
+            justify="left",
+            font=("Segoe UI", 8),
+        ).pack(anchor="w", pady=(6, 0))
+
+    def _select_manager_row(self, key: str | None) -> None:
+        tree = self._manager_tree
+        if tree is None or not tree.winfo_exists() or not key:
+            return
+        if tree.exists(key):
+            tree.selection_set(key)
+            tree.focus(key)
+            tree.see(key)
+
+    def _manager_selected_entry(self) -> model_manager.ModelEntry | None:
+        tree = self._manager_tree
+        if tree is None or not tree.winfo_exists():
+            return None
+        selection = tree.selection()
+        if not selection:
+            return None
+        return model_manager.MODEL_BY_KEY.get(selection[0])
+
+    def _refresh_manager_table(self, select: str | None = None) -> None:
+        tree = self._manager_tree
+        if tree is None or not tree.winfo_exists():
+            return
+        current = select or (tree.selection()[0] if tree.selection() else None)
+        for item in tree.get_children():
+            tree.delete(item)
+        for entry in model_manager.MODEL_CATALOG:
+            installed = model_manager.is_installed(entry)
+            status = (
+                f"ติดตั้งแล้ว ({model_manager.folder_size_mb(entry.folder):,.0f} MB)"
+                if installed
+                else "ยังไม่ติดตั้ง"
+            )
+            tree.insert(
+                "",
+                "end",
+                iid=entry.key,
+                values=(entry.label, entry.size_label, entry.languages, status),
+                tags=("installed",) if installed else (),
+            )
+        if current and tree.exists(current):
+            self._select_manager_row(current)
+
+    def _refresh_gpu_row(self) -> None:
+        if self._manager_gpu_var is None:
+            return
+        if cuda_pack.is_installed():
+            self._manager_gpu_var.set(
+                "สถานะ: ติดตั้งแล้ว "
+                f"({cuda_pack.installed_size_mb():,.0f} MB) — ใช้ GPU กับ CTranslate2 ได้"
+            )
+            label = "ถอนการติดตั้ง"
+        else:
+            self._manager_gpu_var.set(
+                "สถานะ: ยังไม่ได้ติดตั้ง — ดาวน์โหลดประมาณ 1.2 GB "
+                "(แตกไฟล์ราว 1.95 GB) สำหรับเครื่อง NVIDIA"
+            )
+            label = "ติดตั้ง"
+        try:
+            if self._manager_gpu_btn is not None and self._manager_gpu_btn.winfo_exists():
+                self._manager_gpu_btn.configure(text=label)
+        except tk.TclError:
+            pass
+
+    def _manager_set_busy(self, busy: bool) -> None:
+        self._manager_busy = busy
+        state = "disabled" if busy else "normal"
+        for widget in (
+            getattr(self, "_manager_download_btn", None),
+            getattr(self, "_manager_delete_btn", None),
+            getattr(self, "_manager_gpu_btn", None),
+        ):
+            if widget is not None:
+                try:
+                    widget.configure(state=state)
+                except tk.TclError:
+                    pass
+
+    def _manager_post(self, func, *args) -> None:
+        try:
+            self.root.after(0, func, *args)
+        except tk.TclError:
+            pass
+
+    def _manager_progress_update(self, percent: float, message: str) -> None:
+        self._manager_post(self._manager_progress_apply, percent, message)
+
+    def _manager_progress_apply(self, percent: float, message: str) -> None:
+        if self._manager_progress is not None and self._manager_progress.winfo_exists():
+            self._manager_progress.configure(value=percent)
+        if self._manager_status_var is not None:
+            self._manager_status_var.set(message)
+
+    def _manager_download(self) -> None:
+        entry = self._manager_selected_entry()
+        if entry is None:
+            messagebox.showinfo("เลือกโมเดล", "กรุณาเลือกโมเดลจากรายการก่อน", parent=self.root)
+            return
+        if self._manager_busy:
+            return
+        if model_manager.is_installed(entry):
+            messagebox.showinfo(
+                "ติดตั้งแล้ว", f"{entry.label} ติดตั้งอยู่ในเครื่องแล้ว", parent=self.root
+            )
+            return
+        if not messagebox.askyesno(
+            "ยืนยันดาวน์โหลด",
+            f"ดาวน์โหลด {entry.label}\nขนาดประมาณ {entry.size_label}\n\n"
+            "ต้องใช้อินเทอร์เน็ตและพื้นที่ว่างในเครื่องตามขนาดไฟล์",
+            parent=self.root,
+        ):
+            return
+
+        self._manager_set_busy(True)
+        self._manager_progress_apply(0.0, f"กำลังเตรียมดาวน์โหลด {entry.label}...")
+
+        def worker():
+            try:
+                model_manager.download_entry(
+                    entry, on_progress=self._manager_progress_update
+                )
+            except Exception as exc:  # noqa: BLE001 - shown to the user
+                self._manager_post(self._manager_finished, entry.key, False, str(exc))
+            else:
+                self._manager_post(self._manager_finished, entry.key, True, "")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _manager_finished(self, key: str, ok: bool, message: str) -> None:
+        self._manager_set_busy(False)
+        entry = model_manager.MODEL_BY_KEY.get(key)
+        if ok:
+            self._manager_progress_apply(
+                100.0, f"ติดตั้ง {entry.label if entry else key} เรียบร้อย"
+            )
+            self._refresh_manager_table(select=key)
+            self._refresh_gpu_row()
+            if is_frozen():
+                current = self._selected_model_key()
+                if not model_manager.is_installed(current):
+                    label = MODEL_LABEL_BY_KEY.get(key)
+                    if label:
+                        self.model_var.set(label)
+                        self._build_app()
+                        self.set_status(f"เลือกโมเดล {label} ให้แล้ว — กด Start Listening ได้เลย")
+                        self._save_state()
+            self._update_model_hint()
+            if self._machine_profile is not None:
+                self._update_machine_summary()
+        else:
+            self._manager_progress_apply(0.0, "ดาวน์โหลดไม่สำเร็จ")
+            messagebox.showerror("ดาวน์โหลดไม่สำเร็จ", message, parent=self.root)
+
+    def _manager_delete(self) -> None:
+        entry = self._manager_selected_entry()
+        if entry is None or self._manager_busy:
+            return
+        if not model_manager.is_installed(entry):
+            messagebox.showinfo("ยังไม่ได้ติดตั้ง", "โมเดลนี้ยังไม่ได้ติดตั้ง", parent=self.root)
+            return
+        if not messagebox.askyesno(
+            "ยืนยันลบโมเดล",
+            f"ลบ {entry.label} ออกจากเครื่องหรือไม่?\n"
+            "หากต้องการใช้อีกครั้งต้องดาวน์โหลดใหม่",
+            parent=self.root,
+        ):
+            return
+        model_manager.delete_entry(entry)
+        self._refresh_manager_table(select=entry.key)
+        self._manager_progress_apply(0.0, f"ลบ {entry.label} แล้ว")
+        self._update_model_hint()
+        if is_frozen() and self._selected_model_key() == entry.key:
+            self.set_status("โมเดลที่เลือกถูกลบแล้ว — เลือกโมเดลอื่นหรือดาวน์โหลดใหม่")
+
+    def _manager_gpu_toggle(self) -> None:
+        if self._manager_busy:
+            return
+        if cuda_pack.is_installed():
+            if not messagebox.askyesno(
+                "ถอนการติดตั้ง CUDA Runtime",
+                "ลบ CUDA Runtime ที่แอปติดตั้งไว้หรือไม่?\n"
+                "แอปจะกลับไปทำงานบน CPU จนกว่าจะติดตั้งใหม่",
+                parent=self.root,
+            ):
+                return
+            cuda_pack.remove_pack()
+            refresh_dll_paths()
+            self._refresh_gpu_row()
+            self._manager_progress_apply(0.0, "ถอนการติดตั้ง CUDA Runtime แล้ว")
+            self._update_machine_summary()
+            return
+
+        if not messagebox.askyesno(
+            "ติดตั้ง CUDA Runtime",
+            "ดาวน์โหลด CUDA Runtime สำหรับ GPU NVIDIA หรือไม่?\n\n"
+            "ขนาดดาวน์โหลดประมาณ 1.2 GB และใช้พื้นที่หลังแตกไฟล์ราว 1.95 GB\n"
+            "ต้องใช้เครื่องที่มีการ์ดจอ NVIDIA และไดรเวอร์ล่าสุด",
+            parent=self.root,
+        ):
+            return
+
+        self._manager_set_busy(True)
+        self._manager_progress_apply(0.0, "กำลังเริ่มดาวน์โหลด CUDA Runtime...")
+
+        def worker():
+            try:
+                zip_path = cuda_pack.download_pack(on_progress=self._manager_progress_update)
+                cuda_pack.install_from_file(
+                    zip_path, on_progress=self._manager_progress_update
+                )
+                try:
+                    zip_path.unlink()
+                except OSError:
+                    pass
+                refresh_dll_paths()
+            except Exception as exc:  # noqa: BLE001 - shown to the user
+                self._manager_post(self._manager_gpu_finished, False, str(exc))
+            else:
+                self._manager_post(self._manager_gpu_finished, True, "")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _manager_gpu_finished(self, ok: bool, message: str) -> None:
+        self._manager_set_busy(False)
+        if ok:
+            self._manager_progress_apply(
+                100.0,
+                "ติดตั้ง CUDA Runtime เรียบร้อย — กด “ตรวจสเปคเครื่อง” เพื่อยืนยัน "
+                "(ถ้ายังไม่เห็น GPU ให้ปิด-เปิดแอปใหม่)",
+            )
+            self._refresh_gpu_row()
+            self._update_machine_summary()
+        else:
+            self._manager_progress_apply(0.0, "ติดตั้ง CUDA Runtime ไม่สำเร็จ")
+            messagebox.showerror("ติดตั้ง CUDA Runtime ไม่สำเร็จ", message, parent=self.root)
+
+    def _register_hotkey(self):
+        spec = self.app.settings.hotkey
+        try:
+            self._hotkey = GlobalHotkey(spec)
+            self._hotkey.start()
+        except Exception as exc:  # noqa: BLE001 - shown in the status bar
+            self._hotkey = None
             self.set_status(f"Hotkey unavailable: {exc}")
+            return
+        self._poll_hotkey()
+        self.set_status(f"Ready. Hotkey: {spec.upper()}")
 
-    def _hotkey_toggle(self):
-        self.root.after(0, self.toggle)
+    def _poll_hotkey(self):
+        hotkey = self._hotkey
+        if hotkey is None:
+            return
+        if hotkey.consume():
+            self.toggle()
+        self._hotkey_poll = self.root.after(120, self._poll_hotkey)
+
+    def _stop_hotkey(self):
+        if self._hotkey_poll is not None:
+            try:
+                self.root.after_cancel(self._hotkey_poll)
+            except tk.TclError:
+                pass
+            self._hotkey_poll = None
+        if self._hotkey is not None:
+            self._hotkey.stop()
+            self._hotkey = None
 
     def set_status(self, message):
         def update():
@@ -566,10 +1058,12 @@ class RealtimeVoiceGui:
     def _on_destination_change(self, *args):
         if self.app is not None:
             self.app.destination_mode = self._dest_map[self.destination_var.get()]
+        self._save_state()
 
     def _on_model_selection_change(self, *args):
         if hasattr(self, "model_hint_label"):
             self._update_model_hint()
+        self._save_state()
 
     def _update_model_hint(self):
         if self._machine_check_running:
@@ -582,6 +1076,13 @@ class RealtimeVoiceGui:
 
         model_value = self._model_map.get(self.model_var.get(), "turbo")
         spec = get_model_spec(model_value)
+        entry = model_manager.get_entry(model_value)
+        installed_note = ""
+        if entry is not None and not model_manager.is_installed(entry):
+            installed_note = (
+                f"\nสถานะ: ยังไม่ได้ดาวน์โหลด ({entry.size_label}) — "
+                "กด “จัดการโมเดล” เพื่อติดตั้ง"
+            )
 
         if self._machine_profile is None:
             if spec is None:
@@ -596,7 +1097,7 @@ class RealtimeVoiceGui:
         else:
             text, color = evaluate_model_fit(model_value, self._machine_profile)
 
-        self.model_hint_var.set(text)
+        self.model_hint_var.set(text + installed_note)
         if hasattr(self, "model_hint_label"):
             self.model_hint_label.configure(fg=color)
 
@@ -614,7 +1115,9 @@ class RealtimeVoiceGui:
             vram = f" ({mp['vram_gb']} GB)" if mp.get("vram_gb") else ""
             hw_parts.append(f"GPU: {gpu}{vram} [CUDA พร้อม]")
         else:
-            hw_parts.append("GPU: ไม่พบ CUDA (ทำงานโหมด CPU)")
+            hw_parts.append(
+                "GPU: ไม่พบ CUDA (ทำงานโหมด CPU — ติดตั้ง CUDA Runtime ใน “จัดการโมเดล” เพื่อใช้ GPU)"
+            )
         return "เครื่องที่ตรวจพบ: " + " | ".join(hw_parts)
 
     def _update_machine_summary(self) -> None:
@@ -754,8 +1257,10 @@ class RealtimeVoiceGui:
         self.root.after(500, self._poll_target)
 
     def _on_close(self):
+        self._save_state()
         if self.app is not None and self.app.is_listening:
             self.app.stop()
+        self._stop_hotkey()
         try:
             self.icon_win.destroy()
         except Exception:
@@ -764,6 +1269,17 @@ class RealtimeVoiceGui:
 
 
 def run_gui():
+    if os.name == "nt":
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "FiwFlash.RealtimeVoiceTyping"
+            )
+        except Exception:
+            pass
     root = tk.Tk()
     RealtimeVoiceGui(root)
     root.mainloop()

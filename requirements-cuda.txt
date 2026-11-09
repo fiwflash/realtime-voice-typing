@@ -1,5 +1,7 @@
-# Optional GPU runtime for NVIDIA cards.
-# Install these only if you want faster-whisper to run on CUDA.
+# Optional GPU runtime for NVIDIA cards (source / development builds).
+# The packaged installer downloads an equivalent pack from inside the app.
 # A recent NVIDIA driver is still required; the full CUDA Toolkit is not.
-nvidia-cublas-cu12
-nvidia-cudnn-cu12
+nvidia-cublas-cu12>=12.4
+nvidia-cudnn-cu12>=9.1
+nvidia-cuda-nvrtc-cu12>=12.4
+nvidia-cuda-runtime-cu12>=12.4

@@ -7,6 +7,9 @@ INPUT_KEYBOARD = 1
 KEYEVENTF_UNICODE = 0x0004
 KEYEVENTF_KEYUP = 0x0002
 
+VK_CONTROL = 0x11
+VK_V = 0x56
+
 PUL = ctypes.POINTER(ctypes.c_ulong)
 
 
@@ -102,9 +105,20 @@ class TextInserter:
         previous = pyperclip.paste()
         try:
             pyperclip.copy(text)
-            import keyboard
-
-            keyboard.press_and_release("ctrl+v")
+            self._ctrl_v()
             time.sleep(0.05)
         finally:
             pyperclip.copy(previous)
+
+    def _ctrl_v(self) -> None:
+        """Send Ctrl+V without relying on a global keyboard hook library."""
+        sequence = ((VK_CONTROL, 0), (VK_V, 0), (VK_V, KEYEVENTF_KEYUP), (VK_CONTROL, KEYEVENTF_KEYUP))
+        events = (_INPUT * len(sequence))()
+        for index, (vk, flags) in enumerate(sequence):
+            events[index].type = INPUT_KEYBOARD
+            events[index].u.ki.wVk = vk
+            events[index].u.ki.wScan = 0
+            events[index].u.ki.dwFlags = flags
+            events[index].u.ki.time = 0
+            events[index].u.ki.dwExtraInfo = None
+        self.user32.SendInput(len(sequence), events, ctypes.sizeof(_INPUT))
