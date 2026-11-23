@@ -775,8 +775,8 @@ class RealtimeVoiceGui:
 
         win = tk.Toplevel(self.root)
         win.title("จัดการโมเดลและ CUDA Runtime")
-        win.geometry("820x600")
-        win.minsize(720, 540)
+        win.geometry("1100x600")
+        win.minsize(900, 540)
         win.attributes("-topmost", True)
         win.transient(self.root)
         try:
@@ -804,13 +804,14 @@ class RealtimeVoiceGui:
             justify="left",
         ).pack(anchor="w", pady=(2, 8))
 
-        columns = ("model", "size", "lang", "status")
+        columns = ("model", "size", "lang", "note", "status")
         tree = ttk.Treeview(body, columns=columns, show="headings", height=8)
         headings = {
-            "model": ("โมเดล", 280),
-            "size": ("ขนาด", 90),
-            "lang": ("ภาษา", 110),
-            "status": ("สถานะ", 190),
+            "model": ("โมเดล", 190),
+            "size": ("ขนาด", 75),
+            "lang": ("ภาษา", 95),
+            "note": ("คำอธิบาย", 430),
+            "status": ("สถานะ", 150),
         }
         for col, (title, width) in headings.items():
             tree.heading(col, text=title)
@@ -906,7 +907,7 @@ class RealtimeVoiceGui:
                 "",
                 "end",
                 iid=entry.key,
-                values=(entry.label, entry.size_label, entry.languages, status),
+                values=(entry.label, entry.size_label, entry.languages, entry.note, status),
                 tags=("installed",) if installed else (),
             )
         if current and tree.exists(current):
@@ -1193,7 +1194,9 @@ class RealtimeVoiceGui:
             if spec is None:
                 text, color = "ไม่พบข้อมูลสเปคของโมเดลนี้", "#555555"
             else:
+                desc = entry.note if entry is not None else spec.note
                 text = (
+                    f"{desc}\n"
                     f"ใช้ทรัพยากร: VRAM {spec.vram_gb} (GPU) / RAM {spec.ram_gb} (CPU) | "
                     f"แนะนำ: {spec.recommended_spec}\n"
                     "กดปุ่ม “ตรวจสเปคเครื่อง” เพื่อเช็กว่าเครื่องนี้พร้อมแค่ไหน"

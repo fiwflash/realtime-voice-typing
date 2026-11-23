@@ -92,8 +92,10 @@
 | **Small** | ไทย + อังกฤษ | ~0.5 GB | ~0.8–1.2 GB | ~1.0–1.5 GB | CPU 6 คอร์ หรือ GPU 4 GB VRAM |
 | **Medium** | ไทย + อังกฤษ | ~1.5 GB | ~1.8–2.5 GB | ~2.0–3.0 GB | GPU 6 GB VRAM (RTX 2060/3050), RAM 16 GB |
 | **Turbo** *(ค่าเริ่มต้น)* | ไทย + อังกฤษ | ~1.6 GB | ~1.8–2.4 GB | ~2.0–3.0 GB | GPU 6–8 GB VRAM (RTX 3050/3060/4060), RAM 16 GB |
+| **Typhoon Turbo** | ไทยล้วน | ~1.5 GB | ~1.8–2.4 GB | ~2.0–3.0 GB | GPU 6–8 GB VRAM, RAM 16 GB |
 | **Thai Distill** | ไทยล้วน | ~1.55 GB | ~1.8–2.4 GB | ~2.0–3.0 GB | GPU 6–8 GB VRAM, RAM 16 GB |
 | **Large v3** | ไทย + อังกฤษ | ~3.0 GB | ~3.3–4.2 GB | ~3.5–5.0 GB | GPU 8 GB VRAM+ (RTX 3060/4060), RAM 16 GB |
+| **Typhoon Large v3** | ไทยล้วน | ~3.0 GB | ~3.3–4.2 GB | ~3.5–5.0 GB | GPU 8 GB VRAM+ (RTX 3060/4060), RAM 16 GB |
 | **Pathumma** | ไทย + อังกฤษ | ~2.95 GB | ~3.3–4.2 GB | ~3.5–5.0 GB | GPU 8 GB VRAM+ (RTX 3060/4060), RAM 16–32 GB |
 
 > **หมายเหตุ**
@@ -188,7 +190,9 @@ python run_realtime.py
 | **Small** | ไทย + อังกฤษ | ~0.5 GB | [Systran/faster-whisper-small](https://huggingface.co/Systran/faster-whisper-small) |
 | **Medium** | ไทย + อังกฤษ | ~1.5 GB | [Systran/faster-whisper-medium](https://huggingface.co/Systran/faster-whisper-medium) |
 | **Turbo** | ไทย + อังกฤษ | ~1.6 GB | [mobiuslabsgmbh/faster-whisper-large-v3-turbo](https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo) |
+| **Typhoon Turbo** | ไทยล้วน | ~1.5 GB | [chadpisit/typhoon-whisper-turbo-ct2](https://huggingface.co/chadpisit/typhoon-whisper-turbo-ct2) |
 | **Large v3** | ไทย + อังกฤษ | ~3.0 GB | [Systran/faster-whisper-large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) |
+| **Typhoon Large v3** | ไทยล้วน | ~3.0 GB | [chadpisit/typhoon-whisper-large-v3-ct2](https://huggingface.co/chadpisit/typhoon-whisper-large-v3-ct2) |
 | **Thai Distill** | ไทยล้วน | ~1.55 GB | [Vinxscribe/biodatlab-whisper-th-large-v3-faster](https://huggingface.co/Vinxscribe/biodatlab-whisper-th-large-v3-faster) |
 | **Pathumma** | ไทย + อังกฤษ | ~3.0 GB | [PogusTheWhisper/Faster-Pathumma-whisper-th-large-v3-ct2](https://huggingface.co/PogusTheWhisper/Faster-Pathumma-whisper-th-large-v3-ct2) |
 

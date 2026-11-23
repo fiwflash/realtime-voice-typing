@@ -52,12 +52,28 @@ MODEL_CATALOG: list[ModelEntry] = [
         note="คุ้มสุดสำหรับใช้งานทั่วไป เร็วและแม่นระดับดี",
     ),
     ModelEntry(
+        key="typhoon-turbo",
+        label="Typhoon Turbo — Thai (fast)",
+        repo_id="chadpisit/typhoon-whisper-turbo-ct2",
+        size_gb=1.5,
+        languages="ไทยล้วน",
+        note="แม่นภาษาไทยระดับท็อปและเร็ว เหมาะพิมพ์ไทยล้วน (ไม่ปนอังกฤษ)",
+    ),
+    ModelEntry(
         key="large-v3",
         label="Large v3 — Thai+EN (accurate)",
         repo_id="Systran/faster-whisper-large-v3",
         size_gb=3.0,
         languages="ไทย + อังกฤษ",
         note="แม่นยำสูงทั้งไทยและอังกฤษ แต่กิน VRAM/RAM มากขึ้น",
+    ),
+    ModelEntry(
+        key="typhoon-large",
+        label="Typhoon Large v3 — Thai (accurate)",
+        repo_id="chadpisit/typhoon-whisper-large-v3-ct2",
+        size_gb=3.0,
+        languages="ไทยล้วน",
+        note="แม่นภาษาไทยสูงสุดในชุด เหมาะเครื่องมีการ์ดจอแยก (ไม่ปนอังกฤษ)",
     ),
     ModelEntry(
         key="th-pathumma",
