@@ -237,6 +237,18 @@ python run_realtime.py
 
 **ใช้โมเดล CTranslate2 ของคุณเอง:** วางโฟลเดอร์ที่มี `model.bin`, `config.json`, `tokenizer.json` และ `vocabulary.*` ไว้ที่ `models/th-distill` หรือ `models/th-pathumma` (หรือใต้ `%LOCALAPPDATA%\RealtimeVoiceTyping\models\`) แล้วเลือกชื่อนั้นใน dropdown
 
+## การเลือกไมโครโฟน
+
+ช่อง **ไมโครโฟน** ในหน้า Settings ใช้เลือก input device ที่จะอัดเสียง:
+
+- ระบบลิสต์เฉพาะไมค์ที่ใช้งานได้จริง (WASAPI, DirectSound, MME) และตัดตัวซ้ำที่มาจากหลาย host API ให้เหลือตัวเดียว โดยเลือก WASAPI ก่อน
+- ค่าเริ่มต้นคือไมค์ที่ Windows ตั้งเป็น default
+- เปลี่ยนไมค์ระหว่างฟังอยู่ ระบบจะหยุดฟังให้ก่อน — กด Start Listening หรือ F8 อีกครั้งเพื่อเริ่มด้วยไมค์ใหม่
+- กดปุ่ม **รีเฟรช** หลังเสียบ/ถอดไมค์
+- ค่าที่เลือกถูกจำใน `state.json` (`input_mic`, `input_mic_name`)
+
+> ถ้าได้ยินแต่ความเงียบหรือไม่มีข้อความ ให้เปลี่ยนไมค์แล้วดูแถบระดับเสียง **Mic** ด้านบน — ถ้าแทบไม่ขยับแปลว่าเลือกไมค์ตัวที่ไม่มีสัญญาณ
+
 ## Text Destination
 
 | โหมด | พฤติกรรม |

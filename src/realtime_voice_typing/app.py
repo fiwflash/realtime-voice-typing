@@ -41,6 +41,9 @@ class RealtimeVoiceApp:
         self.target_tracker = TargetTracker()
         # Mutable copy so the GUI can switch destination without rebuilding the app.
         self.destination_mode = self.settings.destination_mode
+        # Mutable copy of the chosen microphone so the GUI can switch it live.
+        self.input_device = self.settings.input_device
+        self.input_device_name = self.settings.input_device_name
 
         self._listening = False
         self._mic_ready = False
@@ -76,6 +79,11 @@ class RealtimeVoiceApp:
         self._listening = False
         self._stop_event.set()
 
+    def set_input_device(self, device: int | None, name: str | None = None) -> None:
+        """Change the microphone used on the next start (takes effect on restart)."""
+        self.input_device = device
+        self.input_device_name = name
+
     def clear_transcript(self) -> None:
         self._transcript = []
         self._emit_transcript()
@@ -83,7 +91,11 @@ class RealtimeVoiceApp:
     # -- internals ---------------------------------------------------------
 
     def _run(self) -> None:
-        capture = AudioCapture(self.settings.sample_rate)
+        capture = AudioCapture(
+            self.settings.sample_rate,
+            device=self.input_device,
+            device_name=self.input_device_name,
+        )
         detector = UtteranceDetector(
             sample_rate=self.settings.sample_rate,
             silence_seconds=self.settings.silence_seconds,
@@ -102,7 +114,12 @@ class RealtimeVoiceApp:
             self.speech.model  # force load up front so the first utterance is not delayed
             capture.start()
             self._mic_ready = True
-            self._status(f"Listening ({self.speech.info()})")
+            mic_note = (
+                f", mic={capture.active_device_name}"
+                if capture.active_device_name
+                else ""
+            )
+            self._status(f"Listening ({self.speech.info()}{mic_note})")
             while not self._stop_event.is_set():
                 block = capture.read(timeout=0.2)
                 if block is None:
@@ -115,7 +132,9 @@ class RealtimeVoiceApp:
         except Exception as exc:
             self._mic_ready = False
             self._listening = False
-            self._status(f"Microphone error: {exc}")
+            self._status(
+                f"Microphone error: {exc} — เลือกไมโครโฟนใหม่ในช่อง 'ไมโครโฟน'"
+            )
         finally:
             capture.stop()
             self._mic_ready = False

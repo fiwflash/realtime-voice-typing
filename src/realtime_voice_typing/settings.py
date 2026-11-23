@@ -17,6 +17,8 @@ class Settings:
 
     # Audio capture
     sample_rate: int = 16000
+    input_device: int | None = None    # sounddevice index; None = system default
+    input_device_name: str | None = None  # stable name, preferred over the index
 
     # Voice activity detection (utterance segmentation)
     silence_seconds: float = 0.7        # pause longer than this ends an utterance

@@ -18,6 +18,7 @@ import numpy as np
 
 from . import cuda_pack, model_manager
 from .app import RealtimeVoiceApp
+from .audio import list_input_devices
 from .hotkey import GlobalHotkey
 from .model_manager import MODEL_LABEL_BY_KEY
 from .paths import assets_dir, is_frozen
@@ -347,7 +348,15 @@ class RealtimeVoiceGui:
             )
         )
 
+        # Microphone (input device) selection.
+        self._mic_choices: list = []
+        self._mic_map: dict = {}
+        self._mic_name_map: dict = {}
+        self._selected_mic_index = None
+        self.mic_var = tk.StringVar(value="")
+
         self.app = None
+        self._refresh_mics()
         self._build_app()
         self._build_full()
         self._create_icon()
@@ -389,6 +398,8 @@ class RealtimeVoiceGui:
                     "model": self._model_map[self.model_var.get()],
                     "destination": self._dest_map[self.destination_var.get()],
                     "device": self._device_map[self.device_var.get()],
+                    "input_mic": self._selected_mic_index,
+                    "input_mic_name": self._mic_name_map.get(self.mic_var.get()),
                     "mode": self._mode,
                 }
             )
@@ -397,6 +408,79 @@ class RealtimeVoiceGui:
             save_state(self._state)
         except (KeyError, tk.TclError):
             pass
+
+    # -- microphone selection ------------------------------------------------
+
+    def _refresh_mics(self):
+        previous = self.mic_var.get() if hasattr(self, "mic_var") else ""
+        try:
+            choices = list_input_devices()
+        except Exception:
+            choices = []
+
+        self._mic_choices = choices
+        self._mic_map = {choice["label"]: choice["index"] for choice in choices}
+        self._mic_name_map = {choice["label"]: choice["name"] for choice in choices}
+        labels = [choice["label"] for choice in choices]
+        if hasattr(self, "mic_combo"):
+            self.mic_combo.configure(values=labels)
+        self._set_mic_selection(self._choose_mic_label(previous, labels))
+        if getattr(self, "app", None) is not None:
+            self.app.set_input_device(self._selected_mic_index, self._selected_mic_name())
+            if self.app.is_listening and previous and self.mic_var.get() != previous:
+                self.app.stop()
+
+    def _choose_mic_label(self, previous: str, labels: list) -> str:
+        if previous and previous in labels:
+            return previous
+
+        saved_name = self._state.get("input_mic_name")
+        if saved_name:
+            for choice in self._mic_choices:
+                if choice["name"] == saved_name:
+                    return choice["label"]
+
+        saved_index = self._state.get("input_mic")
+        if saved_index is not None:
+            for choice in self._mic_choices:
+                if choice["index"] == saved_index:
+                    return choice["label"]
+
+        try:
+            import sounddevice as sd
+
+            default_index = sd.default.device[0]
+            default_name = sd.query_devices(default_index)["name"].strip()
+            for choice in self._mic_choices:
+                if choice["name"] == default_name:
+                    return choice["label"]
+        except Exception:
+            pass
+
+        return labels[0] if labels else ""
+
+    def _set_mic_selection(self, label: str) -> None:
+        self.mic_var.set(label)
+        self._selected_mic_index = self._mic_map.get(label)
+
+    def _selected_mic_name(self):
+        return self._mic_name_map.get(self.mic_var.get())
+
+    def _on_mic_change(self, *args):
+        label = self.mic_var.get()
+        self._selected_mic_index = self._mic_map.get(label)
+        if self.app is not None:
+            self.app.set_input_device(self._selected_mic_index, self._selected_mic_name())
+        self._save_state()
+        if self.app is not None and self.app.is_listening:
+            # A running capture holds the old device; stop so the next start uses the new one.
+            self.app.stop()
+            self.root.after(
+                700,
+                lambda: self.set_status(
+                    "เปลี่ยนไมโครโฟนแล้ว — กด Start Listening หรือ F8 เพื่อเริ่มฟังใหม่"
+                ),
+            )
 
     def _restore_mode(self) -> None:
         pos = self._state.get("icon_pos")
@@ -425,6 +509,8 @@ class RealtimeVoiceGui:
                 model_size=model_manager.resolve_model(model_key),
                 device=self._device_map[self.device_var.get()],
                 destination_mode=self._dest_map[self.destination_var.get()],
+                input_device=self._selected_mic_index,
+                input_device_name=self._selected_mic_name(),
             ),
             on_status=self.set_status,
             on_transcript=self.set_transcript,
@@ -486,21 +572,34 @@ class RealtimeVoiceGui:
             state="readonly",
         ).grid(row=2, column=1, columnspan=3, sticky="ew", pady=(6, 0))
 
-        ttk.Label(settings, text="Destination").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(settings, text="ไมโครโฟน").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        self.mic_combo = ttk.Combobox(
+            settings,
+            textvariable=self.mic_var,
+            values=[choice["label"] for choice in self._mic_choices],
+            state="readonly",
+        )
+        self.mic_combo.grid(row=3, column=1, sticky="ew", pady=(6, 0))
+        self.mic_combo.bind("<<ComboboxSelected>>", self._on_mic_change)
+        ttk.Button(settings, text="รีเฟรช", command=self._refresh_mics).grid(
+            row=3, column=2, columnspan=2, sticky="w", padx=(8, 0), pady=(6, 0)
+        )
+
+        ttk.Label(settings, text="Destination").grid(row=4, column=0, sticky="w", pady=(6, 0))
         ttk.Combobox(
             settings,
             textvariable=self.destination_var,
             values=[label for label, _ in DESTINATION_CHOICES],
             state="readonly",
-        ).grid(row=3, column=1, columnspan=3, sticky="ew", pady=(6, 0))
+        ).grid(row=4, column=1, columnspan=3, sticky="ew", pady=(6, 0))
         settings.columnconfigure(1, weight=1)
 
         self.check_button = ttk.Button(
             settings, text="ตรวจสเปคเครื่อง", command=self._start_machine_check
         )
-        self.check_button.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self.check_button.grid(row=5, column=0, columnspan=2, sticky="w", pady=(8, 0))
         ttk.Button(settings, text="สเปคแต่ละโมเดล", command=self._show_model_specs).grid(
-            row=4, column=2, columnspan=2, sticky="e", pady=(8, 0)
+            row=5, column=2, columnspan=2, sticky="e", pady=(8, 0)
         )
 
         ttk.Label(frame, text="Transcript").pack(anchor="w")
@@ -614,6 +713,8 @@ class RealtimeVoiceGui:
         else:
             if not self._ensure_model_ready():
                 return
+            # Always use whatever microphone is selected in the dropdown right now.
+            self.app.set_input_device(self._selected_mic_index, self._selected_mic_name())
             self.app.start()
             self.toggle_button.configure(text="Stop Listening")
         self._draw_icon()
