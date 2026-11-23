@@ -244,7 +244,7 @@ def download_entry(
     if target.exists():
         shutil.rmtree(target, ignore_errors=True)
     tmp.replace(target)
-    on_progress and on_progress(100.0, f"ติดตั้ง {entry.label} เรียบร้อย")
+    on_progress and on_progress(100.0, f"ดาวน์โหลด {entry.label} เรียบร้อย")
     return target
 
 
@@ -259,5 +259,15 @@ def _folder_bytes(path: Path) -> int:
     return total
 
 
-def delete_entry(entry: ModelEntry) -> None:
-    shutil.rmtree(entry.folder, ignore_errors=True)
+def delete_entry(entry: ModelEntry) -> bool:
+    """Remove a model folder. Returns False if it could not be fully removed.
+
+    A model that is still loaded by faster-whisper keeps ``model.bin`` open, and
+    on Windows an open/memory-mapped file cannot be deleted. ``rmtree`` silently
+    keeps the leftover file, so we check afterwards and report the failure.
+    """
+    folder = entry.folder
+    if not folder.exists():
+        return True
+    shutil.rmtree(folder, ignore_errors=True)
+    return not folder.exists()

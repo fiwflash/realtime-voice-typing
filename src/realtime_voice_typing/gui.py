@@ -755,7 +755,7 @@ class RealtimeVoiceGui:
             # Development runs may use faster-whisper's own Hugging Face cache.
             return True
         answer = messagebox.askyesno(
-            "ยังไม่ได้ติดตั้งโมเดล",
+            "ยังไม่ได้โหลดโมเดล",
             "โมเดลที่เลือกยังไม่ได้ดาวน์โหลด\n\n"
             "ต้องการเปิดหน้าจัดการโมเดลเพื่อดาวน์โหลดตอนนี้หรือไม่?",
             parent=self.root,
@@ -843,7 +843,7 @@ class RealtimeVoiceGui:
             justify="left",
         ).pack(side="left", fill="x", expand=True)
         self._manager_gpu_btn = ttk.Button(
-            gpu_box, text="ติดตั้ง", command=self._manager_gpu_toggle
+            gpu_box, text="ดาวน์โหลด CUDA Runtime", command=self._manager_gpu_toggle
         )
         self._manager_gpu_btn.pack(side="right", padx=(8, 0))
         self._refresh_gpu_row()
@@ -899,9 +899,9 @@ class RealtimeVoiceGui:
         for entry in model_manager.MODEL_CATALOG:
             installed = model_manager.is_installed(entry)
             status = (
-                f"ติดตั้งแล้ว ({model_manager.folder_size_mb(entry.folder):,.0f} MB)"
+                f"โหลดแล้ว ({model_manager.folder_size_mb(entry.folder):,.0f} MB)"
                 if installed
-                else "ยังไม่ติดตั้ง"
+                else "ยังไม่ได้โหลด"
             )
             tree.insert(
                 "",
@@ -918,16 +918,16 @@ class RealtimeVoiceGui:
             return
         if cuda_pack.is_installed():
             self._manager_gpu_var.set(
-                "สถานะ: ติดตั้งแล้ว "
+                "สถานะ: โหลดแล้ว "
                 f"({cuda_pack.installed_size_mb():,.0f} MB) — ใช้ GPU กับ CTranslate2 ได้"
             )
-            label = "ถอนการติดตั้ง"
+            label = "ลบ CUDA Runtime"
         else:
             self._manager_gpu_var.set(
-                "สถานะ: ยังไม่ได้ติดตั้ง — ดาวน์โหลดประมาณ 1.2 GB "
+                "สถานะ: ยังไม่ได้โหลด — ดาวน์โหลดประมาณ 1.2 GB "
                 "(แตกไฟล์ราว 1.95 GB) สำหรับเครื่อง NVIDIA"
             )
-            label = "ติดตั้ง"
+            label = "ดาวน์โหลด CUDA Runtime"
         try:
             if self._manager_gpu_btn is not None and self._manager_gpu_btn.winfo_exists():
                 self._manager_gpu_btn.configure(text=label)
@@ -972,7 +972,7 @@ class RealtimeVoiceGui:
             return
         if model_manager.is_installed(entry):
             messagebox.showinfo(
-                "ติดตั้งแล้ว", f"{entry.label} ติดตั้งอยู่ในเครื่องแล้ว", parent=self.root
+                "โหลดแล้ว", f"{entry.label} โหลดอยู่ในเครื่องแล้ว", parent=self.root
             )
             return
         if not messagebox.askyesno(
@@ -1003,7 +1003,7 @@ class RealtimeVoiceGui:
         entry = model_manager.MODEL_BY_KEY.get(key)
         if ok:
             self._manager_progress_apply(
-                100.0, f"ติดตั้ง {entry.label if entry else key} เรียบร้อย"
+                100.0, f"ดาวน์โหลด {entry.label if entry else key} เรียบร้อย"
             )
             self._refresh_manager_table(select=key)
             self._refresh_gpu_row()
@@ -1028,7 +1028,7 @@ class RealtimeVoiceGui:
         if entry is None or self._manager_busy:
             return
         if not model_manager.is_installed(entry):
-            messagebox.showinfo("ยังไม่ได้ติดตั้ง", "โมเดลนี้ยังไม่ได้ติดตั้ง", parent=self.root)
+            messagebox.showinfo("ยังไม่ได้โหลด", "โมเดลนี้ยังไม่ได้โหลด", parent=self.root)
             return
         if not messagebox.askyesno(
             "ยืนยันลบโมเดล",
@@ -1037,7 +1037,15 @@ class RealtimeVoiceGui:
             parent=self.root,
         ):
             return
-        model_manager.delete_entry(entry)
+        if not model_manager.delete_entry(entry):
+            self._refresh_manager_table(select=entry.key)
+            messagebox.showwarning(
+                "ลบไม่สำเร็จ",
+                f"ยังไม่สามารถลบ {entry.label} ได้\n"
+                "โมเดลอาจกำลังถูกใช้งานอยู่ — ให้กด Stop หยุดฟังก่อน แล้วลองลบอีกครั้ง",
+                parent=self.root,
+            )
+            return
         self._refresh_manager_table(select=entry.key)
         self._manager_progress_apply(0.0, f"ลบ {entry.label} แล้ว")
         self._update_model_hint()
@@ -1049,21 +1057,21 @@ class RealtimeVoiceGui:
             return
         if cuda_pack.is_installed():
             if not messagebox.askyesno(
-                "ถอนการติดตั้ง CUDA Runtime",
-                "ลบ CUDA Runtime ที่แอปติดตั้งไว้หรือไม่?\n"
-                "แอปจะกลับไปทำงานบน CPU จนกว่าจะติดตั้งใหม่",
+                "ลบ CUDA Runtime",
+                "ลบ CUDA Runtime ที่แอปโหลดไว้หรือไม่?\n"
+                "แอปจะกลับไปทำงานบน CPU จนกว่าจะโหลดใหม่",
                 parent=self.root,
             ):
                 return
             cuda_pack.remove_pack()
             refresh_dll_paths()
             self._refresh_gpu_row()
-            self._manager_progress_apply(0.0, "ถอนการติดตั้ง CUDA Runtime แล้ว")
+            self._manager_progress_apply(0.0, "ลบ CUDA Runtime แล้ว")
             self._update_machine_summary()
             return
 
         if not messagebox.askyesno(
-            "ติดตั้ง CUDA Runtime",
+            "ดาวน์โหลด CUDA Runtime",
             "ดาวน์โหลด CUDA Runtime สำหรับ GPU NVIDIA หรือไม่?\n\n"
             "ขนาดดาวน์โหลดประมาณ 1.2 GB และใช้พื้นที่หลังแตกไฟล์ราว 1.95 GB\n"
             "ต้องใช้เครื่องที่มีการ์ดจอ NVIDIA และไดรเวอร์ล่าสุด",
@@ -1097,14 +1105,14 @@ class RealtimeVoiceGui:
         if ok:
             self._manager_progress_apply(
                 100.0,
-                "ติดตั้ง CUDA Runtime เรียบร้อย — กด “ตรวจสเปคเครื่อง” เพื่อยืนยัน "
+                "ดาวน์โหลด CUDA Runtime เรียบร้อย — กด “ตรวจสเปคเครื่อง” เพื่อยืนยัน "
                 "(ถ้ายังไม่เห็น GPU ให้ปิด-เปิดแอปใหม่)",
             )
             self._refresh_gpu_row()
             self._update_machine_summary()
         else:
-            self._manager_progress_apply(0.0, "ติดตั้ง CUDA Runtime ไม่สำเร็จ")
-            messagebox.showerror("ติดตั้ง CUDA Runtime ไม่สำเร็จ", message, parent=self.root)
+            self._manager_progress_apply(0.0, "ดาวน์โหลด CUDA Runtime ไม่สำเร็จ")
+            messagebox.showerror("ดาวน์โหลด CUDA Runtime ไม่สำเร็จ", message, parent=self.root)
 
     def _register_hotkey(self):
         spec = self.app.settings.hotkey
@@ -1187,7 +1195,7 @@ class RealtimeVoiceGui:
         if entry is not None and not model_manager.is_installed(entry):
             installed_note = (
                 f"\nสถานะ: ยังไม่ได้ดาวน์โหลด ({entry.size_label}) — "
-                "กด “จัดการโมเดล” เพื่อติดตั้ง"
+                "กด “จัดการโมเดล” เพื่อดาวน์โหลด"
             )
 
         if self._machine_profile is None:
@@ -1224,7 +1232,7 @@ class RealtimeVoiceGui:
             hw_parts.append(f"GPU: {gpu}{vram} [CUDA พร้อม]")
         else:
             hw_parts.append(
-                "GPU: ไม่พบ CUDA (ทำงานโหมด CPU — ติดตั้ง CUDA Runtime ใน “จัดการโมเดล” เพื่อใช้ GPU)"
+                "GPU: ไม่พบ CUDA (ทำงานโหมด CPU — ดาวน์โหลด CUDA Runtime ใน “จัดการโมเดล” เพื่อใช้ GPU)"
             )
         return "เครื่องที่ตรวจพบ: " + " | ".join(hw_parts)
 

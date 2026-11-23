@@ -52,8 +52,8 @@ def installed_size_mb() -> float:
 
 def status_text() -> str:
     if is_installed():
-        return f"ติดตั้งแล้ว ({installed_size_mb():,.0f} MB)"
-    return "ยังไม่ได้ติดตั้ง"
+        return f"โหลดแล้ว ({installed_size_mb():,.0f} MB)"
+    return "ยังไม่ได้โหลด"
 
 
 def remove_pack() -> None:
@@ -120,8 +120,8 @@ def install_from_zip(
                 )
 
     if not is_installed():
-        raise RuntimeError("ติดตั้ง CUDA Runtime ไม่ครบ: ไม่พบ cublas/cuDNN")
-    on_progress and on_progress(100.0, "ติดตั้ง CUDA Runtime เรียบร้อย")
+        raise RuntimeError("ดาวน์โหลด CUDA Runtime ไม่ครบ: ไม่พบ cublas/cuDNN")
+    on_progress and on_progress(100.0, "ดาวน์โหลด CUDA Runtime เรียบร้อย")
 
 
 def install_from_file(
