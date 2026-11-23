@@ -106,9 +106,10 @@ class TextInserter:
         try:
             pyperclip.copy(text)
             self._ctrl_v()
-            time.sleep(0.05)
+            time.sleep(0.3)
         finally:
-            pyperclip.copy(previous)
+            if previous:
+                pyperclip.copy(previous)
 
     def _ctrl_v(self) -> None:
         """Send Ctrl+V without relying on a global keyboard hook library."""

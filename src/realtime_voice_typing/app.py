@@ -71,8 +71,9 @@ class RealtimeVoiceApp:
             return
         self._listening = True
         self._mic_ready = False
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        stop_event = threading.Event()
+        self._stop_event = stop_event
+        self._thread = threading.Thread(target=self._run, args=(stop_event,), daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -90,7 +91,7 @@ class RealtimeVoiceApp:
 
     # -- internals ---------------------------------------------------------
 
-    def _run(self) -> None:
+    def _run(self, stop_event: threading.Event) -> None:
         capture = AudioCapture(
             self.settings.sample_rate,
             device=self.input_device,
@@ -120,7 +121,7 @@ class RealtimeVoiceApp:
                 else ""
             )
             self._status(f"Listening ({self.speech.info()}{mic_note})")
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 block = capture.read(timeout=0.2)
                 if block is None:
                     continue
@@ -143,7 +144,7 @@ class RealtimeVoiceApp:
                 utterances.put(utterance)
             utterances.put(None)  # sentinel to stop the transcriber
             transcriber.join(timeout=60)
-            if self._stop_event.is_set():
+            if stop_event.is_set():
                 self._status("Stopped.")
 
     def _transcribe_loop(self, utterances: queue.Queue) -> None:

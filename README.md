@@ -189,7 +189,7 @@ python run_realtime.py
 | **Medium** | ไทย + อังกฤษ | ~1.5 GB | [Systran/faster-whisper-medium](https://huggingface.co/Systran/faster-whisper-medium) |
 | **Turbo** | ไทย + อังกฤษ | ~1.6 GB | [mobiuslabsgmbh/faster-whisper-large-v3-turbo](https://huggingface.co/mobiuslabsgmbh/faster-whisper-large-v3-turbo) |
 | **Large v3** | ไทย + อังกฤษ | ~3.0 GB | [Systran/faster-whisper-large-v3](https://huggingface.co/Systran/faster-whisper-large-v3) |
-| **Thai Distill** | ไทยล้วน | ~3.0 GB | [Vinxscribe/biodatlab-whisper-th-large-v3-faster](https://huggingface.co/Vinxscribe/biodatlab-whisper-th-large-v3-faster) |
+| **Thai Distill** | ไทยล้วน | ~1.55 GB | [Vinxscribe/biodatlab-whisper-th-large-v3-faster](https://huggingface.co/Vinxscribe/biodatlab-whisper-th-large-v3-faster) |
 | **Pathumma** | ไทย + อังกฤษ | ~3.0 GB | [PogusTheWhisper/Faster-Pathumma-whisper-th-large-v3-ct2](https://huggingface.co/PogusTheWhisper/Faster-Pathumma-whisper-th-large-v3-ct2) |
 
 > **CUDA Runtime pack** คือ cuBLAS + cuDNN + NVRTC + cudart เวอร์ชัน 12 ที่แอปโหลดแยกจาก GitHub Releases แล้วเก็บไว้ใน `%LOCALAPPDATA%\RealtimeVoiceTyping\cuda` — ไม่ทับซ้อนกับ CUDA ที่ติดตั้งในเครื่อง และถอนออกได้ทุกเมื่อ ถ้าไม่มีแพ็กนี้แอปจะทำงานบน CPU ต่อไป

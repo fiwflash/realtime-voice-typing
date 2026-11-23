@@ -22,6 +22,7 @@ class WindowsApi:
 
     def set_foreground_window(self, hwnd: int) -> None:
         if hwnd:
+            self.user32.ShowWindow(hwnd, 9)  # SW_RESTORE ก่อน เพื่อให้ focus ไม่ถูก Windows บล็อก
             self.user32.SetForegroundWindow(hwnd)
 
 

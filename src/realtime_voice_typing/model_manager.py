@@ -71,7 +71,7 @@ MODEL_CATALOG: list[ModelEntry] = [
         key="th-distill",
         label="Thai Distill — Thai (fast)",
         repo_id="Vinxscribe/biodatlab-whisper-th-large-v3-faster",
-        size_gb=3.0,
+        size_gb=1.55,
         languages="ไทยล้วน",
         note="แม่นภาษาไทยสูง แต่ไม่เหมาะกับประโยคปนภาษาอังกฤษ",
     ),
@@ -174,7 +174,6 @@ def _download_to_tmp(entry: ModelEntry) -> Path:
 def download_entry(
     entry: ModelEntry,
     on_progress: Callable[[float, str], None] | None = None,
-    stop_event: threading.Event | None = None,
 ) -> Path:
     """Download a model and return its final folder.
 
@@ -208,11 +207,6 @@ def download_entry(
     thread.start()
 
     while thread.is_alive():
-        if stop_event is not None and stop_event.is_set():
-            # The worker cannot be cancelled mid-file; tell the UI we stopped.
-            on_progress and on_progress(0.0, "ยกเลิกแล้ว (ไฟล์ที่โหลดมาจะถูกลบ)")
-            shutil.rmtree(tmp, ignore_errors=True)
-            raise RuntimeError("cancelled")
         downloaded = _folder_bytes(tmp)
         percent = min(99.0, downloaded * 100.0 / expected)
         on_progress and on_progress(

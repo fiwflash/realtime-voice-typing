@@ -13,6 +13,10 @@ _USABLE_HOSTAPIS = ("Windows WASAPI", "Windows DirectSound", "MME")
 # When a microphone is exposed through several host APIs, prefer these in order.
 _HOSTAPI_PREFERENCE = ("Windows WASAPI", "Windows DirectSound", "MME")
 
+# Remember the last index that opened successfully, keyed by device name, so a
+# device that fails every start is not retried first on the next start.
+_LAST_GOOD: dict[str, int] = {}
+
 
 def _hostapi_rank(name: str) -> int:
     try:
@@ -133,6 +137,7 @@ class AudioCapture:
                 self._open(sd, device)
                 self.active_device = device
                 self.active_device_name = self._device_name(sd, device)
+                _LAST_GOOD[self.device_name or str(device)] = device
                 _log(f"opened input device {device}: {self.active_device_name}")
                 return
             except Exception as exc:  # noqa: BLE001 - try the next usable device
@@ -201,6 +206,10 @@ class AudioCapture:
         if self.device_name:
             named = _devices_named(sd, self.device_name)
             if named:
+                good = _LAST_GOOD.get(self.device_name)
+                if good is not None and good in named:
+                    named.remove(good)
+                    named.insert(0, good)
                 return named
 
         devices = _collect_input_devices(sd)

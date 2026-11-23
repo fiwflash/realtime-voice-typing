@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-import threading
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -63,7 +62,6 @@ def remove_pack() -> None:
 
 def download_pack(
     on_progress: Callable[[float, str], None] | None = None,
-    stop_event: threading.Event | None = None,
 ) -> Path:
     target = downloads_dir() / CUDA_PACK_FILENAME
     part = target.with_suffix(".part")
@@ -74,10 +72,6 @@ def download_pack(
         done = 0
         with open(part, "wb") as handle:
             while True:
-                if stop_event is not None and stop_event.is_set():
-                    handle.close()
-                    part.unlink(missing_ok=True)
-                    raise RuntimeError("cancelled")
                 chunk = response.read(1024 * 512)
                 if not chunk:
                     break

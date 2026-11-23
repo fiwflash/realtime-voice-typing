@@ -486,9 +486,13 @@ class RealtimeVoiceGui:
         pos = self._state.get("icon_pos")
         if isinstance(pos, list) and len(pos) == 2:
             try:
-                self._icon_pos = (int(pos[0]), int(pos[1]))
                 size = self._icon_renderer.pixel_size_for(self.icon_win)
-                self.icon_win.geometry(f"{size}x{size}+{self._icon_pos[0]}+{self._icon_pos[1]}")
+                sw = self.root.winfo_screenwidth()
+                sh = self.root.winfo_screenheight()
+                x = min(max(int(pos[0]), 0), sw - size)
+                y = min(max(int(pos[1]), 0), sh - size)
+                self._icon_pos = (x, y)
+                self.icon_win.geometry(f"{size}x{size}+{x}+{y}")
             except (TypeError, ValueError, tk.TclError):
                 pass
         if self._state.get("mode") == "icon":
